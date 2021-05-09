@@ -36,6 +36,7 @@
 
 extern eeprom_t eeprom_block;
 extern settings_t *settings;
+extern in_addr_t broadcastIPAddress;
 
 #endif /* RASPBERRY_PI || ARDUINO_ARCH_NRF52 */
 
@@ -46,6 +47,7 @@ extern settings_t *settings;
 #include <string>
 #include <locale>
 #include <iomanip>
+#include <arpa/inet.h>
 
 StaticJsonBuffer<JSON_BUFFER_SIZE> jsonBuffer;
 
@@ -665,6 +667,16 @@ void parseSettings(JsonObject& root)
       eeprom_block.field.settings.mode = SOFTRF_MODE_TXRX_TEST;
     } else if (!strcmp(mode_s,"RELAY")) {
       eeprom_block.field.settings.mode = SOFTRF_MODE_RELAY;
+    }
+  }
+
+  JsonVariant ipAddress = root["broadcast_address"];
+  if (ipAddress.success()) {
+    const char * address_s = ipAddress.as<char*>();
+    broadcastIPAddress = inet_addr(address_s);
+    if(broadcastIPAddress == INADDR_NONE )
+    {
+      fprintf(stderr, "Error: invalid brodcast ip %s\n", address_s ) ;
     }
   }
 

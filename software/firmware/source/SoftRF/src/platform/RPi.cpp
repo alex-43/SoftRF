@@ -116,6 +116,8 @@ void onEvent (ev_t ev) {
 eeprom_t eeprom_block;
 settings_t *settings = &eeprom_block.field.settings;
 ufo_t ThisAircraft;
+int udpSocket;
+in_addr_t broadcastIPAddress;
 
 #if !defined(EXCLUDE_MAVLINK)
 aircraft the_aircraft;
@@ -249,6 +251,43 @@ void RPi_SerialNumber(void)
 
 //----- end of MIT License ------------------------------------------------
 
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <errno.h>
+
+static int createNewSocket()
+{
+   int sock = socket( AF_INET, SOCK_DGRAM, 0 ) ;
+
+   if( sock == -1 )
+   {
+      fprintf( stderr, "socket creation failed" ) ;
+      return -1 ;
+   }
+
+   int on = 1 ;
+   if( setsockopt(sock,SOL_SOCKET,SO_BROADCAST,&on,sizeof(on)) != 0 ) {
+      fprintf(stderr, "setsockopt failed" ) ;
+      return -1;
+   }
+
+   struct sockaddr_in address ;
+
+   memset( &address, 0, sizeof(address) ) ;
+
+   address.sin_family      = AF_INET ;
+   address.sin_addr.s_addr = htonl( INADDR_ANY ) ;
+   address.sin_port        = htons( 0 ) ;
+
+   if( bind(sock,(struct sockaddr *)&address,sizeof(address)) == -1 )
+   {
+      fprintf( stderr, "socket binding failed" ) ;
+      close( sock ) ;
+      return -1 ;
+   }
+   return sock ;
+}
+
 static void RPi_setup()
 {
   eeprom_block.field.magic                  = SOFTRF_EEPROM_MAGIC;
@@ -347,7 +386,16 @@ static long RPi_random(long howsmall, long howBig)
 
 static void RPi_WiFi_transmit_UDP(int port, byte *buf, size_t size)
 {
-  /* TBD */
+   struct sockaddr_in address ;
+   address.sin_family = AF_INET ;
+   address.sin_port        = htons(port) ;
+   address.sin_addr.s_addr = broadcastIPAddress;
+  
+   int sentBytes;
+   sentBytes = sendto( udpSocket, buf, size, 0, (const sockaddr *)&address, sizeof(address) ) ;
+   if (sentBytes == -1) {
+      fprintf(stderr, "Transmit UDO error: %s\n", strerror(errno));
+   }
 }
 
 static void RPi_SPI_begin()
@@ -974,6 +1022,7 @@ int main()
 
 //  hw_info.gnss = GNSS_setup();
 
+  udpSocket = createNewSocket();
   Traffic_setup();
   NMEA_setup();
 
@@ -1028,6 +1077,7 @@ int main()
   }
 
   Traffic_TCP_Server.detach();
+  close(udpSocket);
   return 0;
 }
 
