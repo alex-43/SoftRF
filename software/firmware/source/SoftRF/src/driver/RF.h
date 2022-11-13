@@ -1,6 +1,6 @@
 /*
  * RFHelper.h
- * Copyright (C) 2016-2021 Linar Yusupov
+ * Copyright (C) 2016-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,6 +40,7 @@
 #include "../protocol/radio/P3I.h"
 #include "../protocol/radio/FANET.h"
 #include "../protocol/radio/UAT978.h"
+#include "../protocol/radio/ES1090.h"
 
 #define maxof2(a,b)       (a > b ? a : b)
 #define maxof3(a,b,c)     maxof2(maxof2(a,b),c)
@@ -62,7 +63,10 @@ enum
   RF_IC_UATM,
   RF_IC_CC13XX,
   RF_DRV_OGN,
-  RF_IC_SX1262
+  RF_IC_SX1262,
+  RF_IC_MAX2837,
+  RF_IC_R820T,
+  RF_IC_MSI001,
 };
 
 enum
@@ -77,11 +81,28 @@ typedef struct rfchip_ops_struct {
   const char name[8];
   bool (*probe)();
   void (*setup)();
-  void (*channel)(uint8_t);
+  void (*channel)(int8_t);
   bool (*receive)();
   void (*transmit)();
   void (*shutdown)();
 } rfchip_ops_t;
+
+typedef struct Slot_descr_struct {
+  uint16_t begin;
+  uint16_t duration;
+  unsigned long tmarker;
+} Slot_descr_t;
+
+typedef struct Slots_descr_struct {
+  uint16_t      interval_min;
+  uint16_t      interval_max;
+  uint16_t      interval_mid;
+  uint16_t      adj;
+  uint16_t      air_time;
+  Slot_descr_t  s0;
+  Slot_descr_t  s1;
+  uint8_t       current;
+} Slots_descr_t;
 
 String Bin2Hex(byte *, size_t);
 uint8_t parity(uint32_t);
@@ -104,5 +125,6 @@ extern size_t (*protocol_encode)(void *, ufo_t *);
 extern bool (*protocol_decode)(void *, ufo_t *, ufo_t *);
 
 extern int8_t RF_last_rssi;
+extern const char *Protocol_ID[];
 
 #endif /* RFHELPER_H */

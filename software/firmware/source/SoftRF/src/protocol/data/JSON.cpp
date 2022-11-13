@@ -1,6 +1,6 @@
 /*
  * JSONHelper.cpp
- * Copyright (C) 2018-2021 Linar Yusupov
+ * Copyright (C) 2018-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,9 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#if defined(RASPBERRY_PI) || defined(ARDUINO_ARCH_NRF52)
-
-#include <ArduinoJson.h>
+#if defined(RASPBERRY_PI) || defined(ARDUINO_ARCH_NRF52) || defined(ARDUINO_ARCH_RP2040)
 
 #include "../../system/SoC.h"
 #include <TinyGPS++.h>
@@ -32,13 +30,15 @@
 #include "NMEA.h"
 #include "GDL90.h"
 #include "D1090.h"
+
+#undef DEPRECATED
 #include "JSON.h"
 
 extern eeprom_t eeprom_block;
 extern settings_t *settings;
 extern in_addr_t broadcastIPAddress;
 
-#endif /* RASPBERRY_PI || ARDUINO_ARCH_NRF52 */
+#endif /* RASPBERRY_PI || ARDUINO_ARCH_NRF52 || ARDUINO_ARCH_RP2040 */
 
 #if defined(RASPBERRY_PI)
 
@@ -595,6 +595,21 @@ void parseUISettings(JsonObject& root)
     }
   }
 #endif
+
+  JsonVariant rotate = root["rotate"];
+  if (rotate.success()) {
+    const char * rotate_s = rotate.as<char*>();
+    if (!strcmp(rotate_s,"0")) {
+      ui_settings.rotate = ROTATE_0;
+    } else if (!strcmp(rotate_s,"90")) {
+      ui_settings.rotate = ROTATE_90;
+    } else if (!strcmp(rotate_s,"180")) {
+      ui_settings.rotate = ROTATE_180;
+    } else if (!strcmp(rotate_s,"270")) {
+      ui_settings.rotate = ROTATE_270;
+    }
+  }
+
   JsonVariant orientation = root["orientation"];
   if (orientation.success()) {
     const char * orientation_s = orientation.as<char*>();
@@ -653,6 +668,9 @@ void parseUISettings(JsonObject& root)
     ui_settings.team = team_32;
   }
 }
+#endif /* RASPBERRY_PI || ARDUINO_ARCH_NRF52 */
+
+#if defined(RASPBERRY_PI) || defined(ARDUINO_ARCH_NRF52) || defined(ARDUINO_ARCH_RP2040)
 
 void parseSettings(JsonObject& root)
 {
@@ -880,6 +898,23 @@ void parseSettings(JsonObject& root)
     };
     eeprom_block.field.settings.freq_corr = fc;
   }
+#if defined(USE_OGN_ENCRYPTION)
+  JsonVariant key = root["igc_key"];
+  if (key.success()) {
+    char buf[32 + 1];
+
+    const char *key_s = key.as<char*>();
+    strncpy(buf, key_s, sizeof(buf));
+
+    eeprom_block.field.settings.igc_key[3] = strtoul(buf + 24, NULL, 16);
+    buf[24] = 0;
+    eeprom_block.field.settings.igc_key[2] = strtoul(buf + 16, NULL, 16);
+    buf[16] = 0;
+    eeprom_block.field.settings.igc_key[1] = strtoul(buf +  8, NULL, 16);
+    buf[ 8] = 0;
+    eeprom_block.field.settings.igc_key[0] = strtoul(buf +  0, NULL, 16);
+  }
+#endif
 }
 
-#endif /* RASPBERRY_PI || ARDUINO_ARCH_NRF52 */
+#endif /* RASPBERRY_PI || ARDUINO_ARCH_NRF52 || ARDUINO_ARCH_RP2040 */

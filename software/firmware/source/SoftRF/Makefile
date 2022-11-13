@@ -1,6 +1,6 @@
 #
 # Makefile.RPi
-# Copyright (C) 2018-2021 Linar Yusupov
+# Copyright (C) 2018-2022 Linar Yusupov
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,14 +15,20 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#BASICMAC      = -DUSE_BASICMAC
-#NOMAVLINK    = -DEXCLUDE_MAVLINK
+BASICMAC      ?= no
+NOMAVLINK     ?= no
+
+GDEY027T91    ?= no
+
+RTLSDR        ?= no
+HACKRF        ?= no
+MIRISDR       ?= no
 
 CC            = gcc
 CXX           = g++
 
 CFLAGS        = -Winline -MMD -DRASPBERRY_PI -DBCM2835_NO_DELAY_COMPATIBILITY \
-                -D__BASEFILE__=\"$*\" $(BASICMAC) $(NOMAVLINK)
+                -D__BASEFILE__=\"$*\"
 
 CXXFLAGS      = -std=c++11 $(CFLAGS)
 
@@ -32,6 +38,7 @@ BIN_ELF       := $(SKETCH:.ino=.ino.elf)
 BIN_HEX       := $(BIN_ELF:.elf=.hex)
 BIN_IHEX      := $(BIN_ELF:.elf=.ihex)
 BIN_UF2       := $(BIN_ELF:.elf=.uf2)
+BIN_RAW       := $(BIN_ELF:.elf=.bin)
 
 SOFTRF_DIR    = ../SoftRF
 
@@ -44,9 +51,13 @@ HEXDIR        = /tmp/$(ARDUINO)
 
 LN            = ln -s
 RM            = rm -f
-OBJCOPY       = arm-none-eabi-objcopy -O ihex -R .empty -R .vtable \
+OBJCOPY       = arm-none-eabi-objcopy
+OBJCOPY_TI    = -O ihex -R .empty -R .vtable \
                  -R .dmaSpi0RxControlTableEntry -R .dmaSpi0TxControlTableEntry \
                  -R .dmaSpi1RxControlTableEntry -R .dmaSpi1TxControlTableEntry
+OBJCOPY_CY    = -O binary -R .eh_frame -R .ARM.exidx \
+                 -R .cyloadablemeta -R .cyflashprotect \
+                 -R .cymeta -R .cychipprotect -R .cyloadermeta
 SED           = sed -i 's/:10FFD800FFFFFF00FFFFFFFF00FFFFFFC500C5FF9A/:10FFD800C501FEC5FFFFFFFF00FFFFFFC500C5FF0E/'
 UF2CONV       = uf2conv.py
 
@@ -79,8 +90,9 @@ DUMP978_PATH  = $(LIB_PATH)/dump978/src
 GFX_PATH      = $(LIB_PATH)/Adafruit-GFX-Library
 U8G2_PATH     = $(LIB_PATH)/U8g2_for_Adafruit_GFX/src
 EPD2_PATH     = $(LIB_PATH)/GxEPD2/src
+MODES_PATH    = $(LIB_PATH)/libmodes/src
 
-ifdef BASICMAC
+ifeq ($(BASICMAC), yes)
 RADIO_PATH    = $(BASICMAC_PATH)
 else
 RADIO_PATH    = $(LMIC_PATH)
@@ -92,7 +104,8 @@ INCLUDE       = -I$(PRODAT_PATH) -I$(PRORAD_PATH)  -I$(PLATFORM_PATH) \
                 -I$(BCMLIB_PATH) -I$(MAVLINK_PATH) -I$(AIRCRAFT_PATH) \
                 -I$(ADSB_PATH)   -I$(NMEALIB_PATH) -I$(GEOID_PATH)    \
                 -I$(JSON_PATH)   -I$(TCPSRV_PATH)  -I$(DUMP978_PATH)  \
-                -I$(GFX_PATH)    -I$(U8G2_PATH)    -I$(EPD2_PATH)
+                -I$(GFX_PATH)    -I$(U8G2_PATH)    -I$(EPD2_PATH)     \
+                -I$(MODES_PATH)
 
 SRC_CPPS      := $(SRC_PATH)/TrafficHelper.cpp \
                  $(SRC_PATH)/Library.cpp
@@ -101,14 +114,15 @@ PRORAD_CPPS   := $(PRORAD_PATH)/Legacy.cpp \
                  $(PRORAD_PATH)/P3I.cpp    \
                  $(PRORAD_PATH)/FANET.cpp  \
                  $(PRORAD_PATH)/OGNTP.cpp  \
-                 $(PRORAD_PATH)/UAT978.cpp
+                 $(PRORAD_PATH)/UAT978.cpp \
+                 $(PRORAD_PATH)/ES1090.cpp
 
 PRODAT_CPPS   := $(PRODAT_PATH)/NMEA.cpp    \
                  $(PRODAT_PATH)/GDL90.cpp   \
                  $(PRODAT_PATH)/D1090.cpp   \
                  $(PRODAT_PATH)/JSON.cpp
 
-ifndef NOMAVLINK
+ifeq ($(NOMAVLINK), no)
 PRODAT_CPPS   += $(PRODAT_PATH)/MAVLink.cpp
 endif
 
@@ -117,7 +131,12 @@ PLAT_CPPS     := $(PLATFORM_PATH)/ESP8266.cpp  \
                  $(PLATFORM_PATH)/STM32.cpp    \
                  $(PLATFORM_PATH)/PSoC4.cpp    \
                  $(PLATFORM_PATH)/CC13XX.cpp   \
-                 $(PLATFORM_PATH)/nRF52.cpp
+                 $(PLATFORM_PATH)/nRF52.cpp    \
+                 $(PLATFORM_PATH)/LPC43.cpp    \
+                 $(PLATFORM_PATH)/SAMD.cpp     \
+                 $(PLATFORM_PATH)/AVR.cpp      \
+                 $(PLATFORM_PATH)/ASR66.cpp    \
+                 $(PLATFORM_PATH)/RP2040.cpp
 
 DRV_CPPS      := $(DRIVER_PATH)/RF.cpp        \
                  $(DRIVER_PATH)/GNSS.cpp      \
@@ -136,6 +155,7 @@ UI_CPPS       := $(UI_PATH)/Web.cpp        \
                  $(UI_PATH)/Status_EPD.cpp \
                  $(UI_PATH)/Text_EPD.cpp   \
                  $(UI_PATH)/Baro_EPD.cpp   \
+                 $(UI_PATH)/IMU_EPD.cpp    \
                  $(UI_PATH)/Time_EPD.cpp
 
 SYSTEM_CPPS   := $(SYSTEM_PATH)/SoC.cpp    \
@@ -164,6 +184,17 @@ OBJS          := $(SRC_CPPS:.cpp=.o) \
                  $(TIMELIB_PATH)/Time.o \
                  $(NRF905_PATH)/nRF905.o \
                  $(ADSB_PATH)/adsb_encoder.o \
+                 $(MODES_PATH)/mode-s.o \
+                 $(MODES_PATH)/maglut.o \
+                 $(MODES_PATH)/sdr/fifo.o \
+                 $(MODES_PATH)/sdr/util.o \
+                 $(MODES_PATH)/sdr/convert.o \
+                 $(MODES_PATH)/sdr/dispatcher.o \
+                 $(MODES_PATH)/sdr/cpu.o \
+                 $(MODES_PATH)/sdr/flavor.generic.o \
+                 $(MODES_PATH)/sdr/impl/tables.o \
+                 $(MODES_PATH)/sdr/sdr.o \
+                 $(MODES_PATH)/sdr/sdr_ifile.o \
                  $(NMEALIB_PATH)/info.o $(NMEALIB_PATH)/util.o \
                  $(NMEALIB_PATH)/nmath.o $(NMEALIB_PATH)/context.o \
                  $(NMEALIB_PATH)/sentence.o $(NMEALIB_PATH)/validate.o \
@@ -175,81 +206,126 @@ OBJS          := $(SRC_CPPS:.cpp=.o) \
                  $(DUMP978_PATH)/uat_decode.o $(DUMP978_PATH)/fec/decode_rs_char.o \
                  $(GFX_PATH)/Adafruit_GFX.o $(LMIC_PATH)/raspi/Print.o \
                  $(EPD2_PATH)/GxEPD2_EPD.o $(EPD2_PATH)/epd/GxEPD2_270.o \
+                 $(EPD2_PATH)/epd/GxEPD2_270_T91.o \
                  $(U8G2_PATH)/U8g2_for_Adafruit_GFX.o $(U8G2_PATH)/u8g2_fonts.o
 
-ifdef BASICMAC
-OBJS          += $(RADIO_PATH)/lmic/radio-sx127x.o $(RADIO_PATH)/lmic/radio-sx126x.o \
+ifeq ($(BASICMAC), yes)
+  OBJS        += $(RADIO_PATH)/lmic/radio-sx127x.o $(RADIO_PATH)/lmic/radio-sx126x.o \
                  $(RADIO_PATH)/lmic/debug.o $(RADIO_PATH)/lmic/lce.o
+  CFLAGS      += -DUSE_BASICMAC
 endif
 
-ifndef NOMAVLINK
-OBJS          += $(MAVLINK_PATH)/mavlink.o
+ifeq ($(NOMAVLINK), no)
+  OBJS        += $(MAVLINK_PATH)/mavlink.o
+else
+  CFLAGS      += -DEXCLUDE_MAVLINK
+endif
+
+ifeq ($(GDEY027T91), yes)
+  CFLAGS      += -DUSE_GDEY027T91
 endif
 
 LIBS          := -L$(BCMLIB_PATH) -lbcm2835 -lpthread
+
+ifeq ($(RTLSDR), yes)
+  OBJS        += $(MODES_PATH)/sdr/sdr_rtlsdr.o \
+                 $(MODES_PATH)/sdr/flavor.armv7a_neon_vfpv4.o
+  CFLAGS      += -DENABLE_RTLSDR -march=armv7-a -mfpu=neon-vfpv4 -DSTARCH_MIX_ARM
+  LIBS        += -lrtlsdr
+endif
+
+ifeq ($(HACKRF), yes)
+  OBJS        += $(MODES_PATH)/sdr/sdr_hackrf.o \
+                 $(MODES_PATH)/sdr/flavor.armv7a_neon_vfpv4.o
+  CFLAGS      += -DENABLE_HACKRF -march=armv7-a -mfpu=neon-vfpv4 -DSTARCH_MIX_ARM
+  LIBS        += -lhackrf
+endif
+
+ifeq ($(MIRISDR), yes)
+  OBJS        += $(MODES_PATH)/sdr/sdr_miri.o \
+                 $(MODES_PATH)/sdr/flavor.armv7a_neon_vfpv4.o
+  CFLAGS      += -DENABLE_MIRISDR -march=armv7-a -mfpu=neon-vfpv4 -DSTARCH_MIX_ARM
+  LIBS        += -lmirisdr
+endif
 
 PROGNAME      := SoftRF
 
 DEPS          := $(OBJS:.o=.d)
 
 all:
-				$(ARDUINO) --verify --verbose-build $(SKETCH)
+	$(ARDUINO) --verify --verbose-build $(SKETCH)
 
 cc:
-				$(ENERGIA) --verify --verbose-build $(SKETCH)
+	$(ENERGIA) --verify --verbose-build $(SKETCH)
 
 upload:
-				$(ARDUINO) --upload --verbose-build --verbose-upload  $(SKETCH)
+	$(ARDUINO) --upload --verbose-build --verbose-upload  $(SKETCH)
 
 #
 # "Intel HEX" type of the firmware binary is necessary input format
 #    for cc2538-bsl.py serial firmware uploader.
 #
 ihex:
-				$(TC_PATH)/$(OBJCOPY) $(BINDIR)/$(BIN_ELF) $(BINDIR)/$(BIN_IHEX)
-				$(SED) $(BINDIR)/$(BIN_IHEX)
+	$(TC_PATH)/$(OBJCOPY) $(OBJCOPY_TI) $(BINDIR)/$(BIN_ELF) $(BINDIR)/$(BIN_IHEX)
+	$(SED) $(BINDIR)/$(BIN_IHEX)
 
-uf2:
-				$(UF2CONV) $(HEXDIR)/$(BIN_HEX) -c -f 0xADA52840 -o $(HEXDIR)/$(BIN_UF2)
+psoc4:
+	$(TC_PATH)/$(OBJCOPY) $(OBJCOPY_CY) $(HEXDIR)/$(BIN_ELF) $(HEXDIR)/$(BIN_RAW)
+
+# Nordic nRF52840
+nuf2:
+	$(UF2CONV) $(HEXDIR)/$(BIN_HEX) -c -f 0xada52840 -o $(HEXDIR)/$(BIN_UF2)
+
+# Microchip (Atmel) SAMD21
+suf2:
+	$(UF2CONV) $(HEXDIR)/$(BIN_HEX) -c -f 0x68ed2b88 -o $(HEXDIR)/$(BIN_UF2)
+
+# Espressif ESP32-S2
+e2uf2:
+	$(UF2CONV) $(HEXDIR)/$(BIN_RAW) -c -f 0xbfdd4eee -b 0 -o $(HEXDIR)/$(BIN_UF2)
+
+# Espressif ESP32-S3
+e3uf2:
+	$(UF2CONV) $(HEXDIR)/$(BIN_RAW) -c -f 0xc47e5767 -b 0 -o $(HEXDIR)/$(BIN_UF2)
 
 pi: bcm $(PROGNAME) $(PROGNAME)-aux
 
 %.o: %.cpp
-				$(CXX) -c $(CXXFLAGS) $*.cpp -o $*.o $(INCLUDE)
+	$(CXX) -c $(CXXFLAGS) $*.cpp -o $*.o $(INCLUDE)
 
 %.o: %.c
-				$(CC) -c $(CFLAGS) $*.c -o $*.o $(INCLUDE)
+	$(CC) -c $(CFLAGS) $*.c -o $*.o $(INCLUDE)
 
 hal.o: $(RADIO_PATH)/hal/hal.cpp
-				$(CXX) $(CXXFLAGS) -c $(RADIO_PATH)/hal/hal.cpp $(INCLUDE) -o hal.o
+	$(CXX) $(CXXFLAGS) -c $(RADIO_PATH)/hal/hal.cpp $(INCLUDE) -o hal.o
 
 hal-aux.o: $(RADIO_PATH)/hal/hal.cpp
-				$(CXX) $(CXXFLAGS) -DUSE_SPI1 -c $(RADIO_PATH)/hal/hal.cpp $(INCLUDE) -o hal-aux.o
+	$(CXX) $(CXXFLAGS) -DUSE_SPI1 -c $(RADIO_PATH)/hal/hal.cpp $(INCLUDE) -o hal-aux.o
 
 RPi.o: $(PLATFORM_PATH)/RPi.cpp
-				$(CXX) $(CXXFLAGS) -c $(PLATFORM_PATH)/RPi.cpp $(INCLUDE) -o RPi.o
+	$(CXX) $(CXXFLAGS) -c $(PLATFORM_PATH)/RPi.cpp $(INCLUDE) -o RPi.o
 
 RPi-aux.o: $(PLATFORM_PATH)/RPi.cpp
-				$(CXX) $(CXXFLAGS) -DUSE_SPI1 -c $(PLATFORM_PATH)/RPi.cpp $(INCLUDE) -o RPi-aux.o
+	$(CXX) $(CXXFLAGS) -DUSE_SPI1 -c $(PLATFORM_PATH)/RPi.cpp $(INCLUDE) -o RPi-aux.o
 
 aes.o: $(RADIO_PATH)/aes/lmic.c
-				$(CC) $(CFLAGS) -c $(RADIO_PATH)/aes/lmic.c $(INCLUDE) -o aes.o
+	$(CC) $(CFLAGS) -c $(RADIO_PATH)/aes/lmic.c $(INCLUDE) -o aes.o
 
 $(RADIO_PATH)/lmic/%.o: $(RADIO_PATH)/lmic/%.c
-				$(CC) -c $(CFLAGS) $(RADIO_PATH)/lmic/$*.c -o $(RADIO_PATH)/lmic/$*.o $(INCLUDE)
+	$(CC) -c $(CFLAGS) $(RADIO_PATH)/lmic/$*.c -o $(RADIO_PATH)/lmic/$*.o $(INCLUDE)
 
 bcm:
-				(cd $(BCMLIB_PATH)/../ ; ./configure ; make)
+	(cd $(BCMLIB_PATH)/../ ; ./configure ; make)
 
 $(PROGNAME): $(OBJS) aes.o hal.o RPi.o
-				$(CXX) $(OBJS) aes.o hal.o RPi.o $(LIBS) -o $(PROGNAME)
+	$(CXX) $(OBJS) aes.o hal.o RPi.o $(LIBS) -o $(PROGNAME)
 
 $(PROGNAME)-aux: $(OBJS) aes.o hal-aux.o RPi-aux.o
-				$(CXX) $(OBJS) aes.o hal-aux.o RPi-aux.o $(LIBS) -o $(PROGNAME)-aux
+	$(CXX) $(OBJS) aes.o hal-aux.o RPi-aux.o $(LIBS) -o $(PROGNAME)-aux
 
 bcm-clean:
-				(cd $(BCMLIB_PATH)/../ ; make distclean)
+	(cd $(BCMLIB_PATH)/../ ; make distclean)
 
 clean: bcm-clean
-				rm -f $(OBJS) $(DEPS) aes.o hal.o hal-aux.o \
-				RPi.o RPi-aux.o $(PROGNAME) $(PROGNAME)-aux *.d
+	rm -f $(OBJS) $(DEPS) aes.o hal.o hal-aux.o \
+	RPi.o RPi-aux.o $(PROGNAME) $(PROGNAME)-aux *.d

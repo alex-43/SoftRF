@@ -4,7 +4,7 @@
 
 ## License
 
-Copyright (C) 2016-2021 Linar Yusupov <linar.r.yusupov@gmail.com>
+Copyright (C) 2016-2022 Linar Yusupov <linar.r.yusupov@gmail.com>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -51,7 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * EasyLink library is developed by **Robert Wessels** and **Tony Cave**
  * Dump978 library is developed by **Oliver Jowett**
  * FEC library is developed by **Phil Karn**
- * AXP20X, BMA423, FT5206 and PCF8563 libraries are developed by **Lewis He**
+ * AXP20X, XPowersLib, BMA423, FT5206, PCF8563 and SensorsLib libraries are developed by **Lewis He**
  * GxEPD2 library is developed by **Jean-Marc Zingg**
  * Adafruit SSD1306 and GFX libraries are developed by **Adafruit Industries**
  * GDL90 decoder is developed by **Ryan David**
@@ -64,6 +64,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * port of MicroPython for ESP32 is developed by **Boris Lovosevic**
  * ESP32 BT SPP library is developed by **Evandro Copercini**
  * TFT library is developed by **Bodmer**
+ * STM32duino Low Power and RTC libraries are developed by **Wi6Labs**
+ * Basic MAC library is developed by **Michael Kuyper**
+ * LowPowerLab SPIFlash library is maintained by **Felix Rusu**
+ * Arduino Core for ASR6x0x is developed by **Aaron Lee**
  * ADXL362 library is developed by **Anne Mahaffey**
  * Arduino Core for nRF52 and TinyUSB library are developed by **Ha Thach**
  * Arduino-NVM library is developed by **Frank Holtz**
@@ -71,3 +75,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  * Adafruit SPIFlash and SleepyDog libraries are developed by **Adafruit Industries**
  * SdFat library is developed by **Bill Greiman**
  * Arduino MIDI library is developed by **Francois Best**
+ * Arduino uCDB library is developed by **Ioulianos Kakoulidis**
+ * libmodes library is developed by **Salvatore Sanfilippo** and **Thomas Watson**
+ * Arduino Core for Atmel SAMD and FlashStorage library are developed by **Arduino LLC**
+ * USB host library 2.0 for Zero/M0/SAMD is developed by **gdsports625@gmail.com**
+ * EspTinyUSB library is developed by **Dariusz Krempa**
+ * Arduino Core for Raspberry Pi RP2040 is developed by **Earle Philhower**
+ * MPU-9250 9 DoF sensor library is developed by **Kris Winer** and **Hideaki Tai**

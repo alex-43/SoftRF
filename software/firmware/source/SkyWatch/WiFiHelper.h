@@ -1,6 +1,6 @@
 /*
  * WiFiHelper.h
- * Copyright (C) 2016-2021 Linar Yusupov
+ * Copyright (C) 2016-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,6 +45,7 @@ void WiFi_setup(void);
 void WiFi_loop(void);
 void WiFi_fini(void);
 
+extern String host_name;
 #if defined(ARDUINO) && !defined(ENERGIA_ARCH_CC13XX)
 extern WiFiUDP Uni_Udp;
 #endif

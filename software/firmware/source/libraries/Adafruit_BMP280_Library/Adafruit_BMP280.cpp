@@ -15,7 +15,9 @@
  ***************************************************************************/
 #include "Arduino.h"
 #include <Wire.h>
+#if !defined(HACKRF_ONE)
 #include <SPI.h>
+#endif /* HACKRF_ONE */
 #include "Adafruit_BMP280.h"
 
 
@@ -43,6 +45,7 @@ bool Adafruit_BMP280::begin(uint8_t a, uint8_t chipid) {
   if (_cs == -1) {
     // i2c
     Wire.begin();
+#if !defined(HACKRF_ONE)
   } else {
     digitalWrite(_cs, HIGH);
     pinMode(_cs, OUTPUT);
@@ -56,6 +59,7 @@ bool Adafruit_BMP280::begin(uint8_t a, uint8_t chipid) {
       pinMode(_mosi, OUTPUT);
       pinMode(_miso, INPUT);
     }
+#endif /* HACKRF_ONE */
   }
 
   if (read8(BMP280_REGISTER_CHIPID) != chipid)
@@ -66,6 +70,7 @@ bool Adafruit_BMP280::begin(uint8_t a, uint8_t chipid) {
   return true;
 }
 
+#if !defined(HACKRF_ONE)
 uint8_t Adafruit_BMP280::spixfer(uint8_t x) {
   if (_sck == -1)
     return SPI.transfer(x);
@@ -83,6 +88,7 @@ uint8_t Adafruit_BMP280::spixfer(uint8_t x) {
   }
   return reply;
 }
+#endif /* HACKRF_ONE */
 
 /**************************************************************************/
 /*!
@@ -96,6 +102,7 @@ void Adafruit_BMP280::write8(byte reg, byte value)
     Wire.write((uint8_t)reg);
     Wire.write((uint8_t)value);
     Wire.endTransmission();
+#if !defined(HACKRF_ONE)
   } else {
 #if defined(SPI_HAS_TRANSACTION)
     if (_sck == -1)
@@ -109,6 +116,7 @@ void Adafruit_BMP280::write8(byte reg, byte value)
     if (_sck == -1)
       SPI.endTransaction();              // release the SPI bus
 #endif
+#endif /* HACKRF_ONE */
   }
 }
 
@@ -128,6 +136,7 @@ uint8_t Adafruit_BMP280::read8(byte reg)
     Wire.requestFrom((uint8_t)_i2caddr, (byte)1);
     value = Wire.read();
 
+#if !defined(HACKRF_ONE)
   } else {
 #if defined(SPI_HAS_TRANSACTION)
     if (_sck == -1)
@@ -141,6 +150,7 @@ uint8_t Adafruit_BMP280::read8(byte reg)
     if (_sck == -1)
       SPI.endTransaction();              // release the SPI bus
 #endif
+#endif /* HACKRF_ONE */
   }
   return value;
 }
@@ -161,6 +171,7 @@ uint16_t Adafruit_BMP280::read16(byte reg)
     Wire.requestFrom((uint8_t)_i2caddr, (byte)2);
     value = (Wire.read() << 8) | Wire.read();
 
+#if !defined(HACKRF_ONE)
   } else {
 #if defined(SPI_HAS_TRANSACTION)
     if (_sck == -1)
@@ -174,6 +185,7 @@ uint16_t Adafruit_BMP280::read16(byte reg)
     if (_sck == -1)
       SPI.endTransaction();              // release the SPI bus
 #endif
+#endif /* HACKRF_ONE */
   }
 
   return value;
@@ -224,6 +236,7 @@ uint32_t Adafruit_BMP280::read24(byte reg)
     value <<= 8;
     value |= Wire.read();
 
+#if !defined(HACKRF_ONE)
   } else {
 #if defined(SPI_HAS_TRANSACTION)
     if (_sck == -1)
@@ -243,16 +256,15 @@ uint32_t Adafruit_BMP280::read24(byte reg)
     if (_sck == -1)
       SPI.endTransaction();              // release the SPI bus
 #endif
+#endif /* HACKRF_ONE */
   }
 
   return value;
 }
 
-/**************************************************************************/
 /*!
-    @brief  Reads the factory-set coefficients
-*/
-/**************************************************************************/
+ *  @brief  Reads the factory-set coefficients
+ */
 void Adafruit_BMP280::readCoefficients(void)
 {
     _bmp280_calib.dig_T1 = read16_LE(BMP280_REGISTER_DIG_T1);
@@ -270,11 +282,10 @@ void Adafruit_BMP280::readCoefficients(void)
     _bmp280_calib.dig_P9 = readS16_LE(BMP280_REGISTER_DIG_P9);
 }
 
-/**************************************************************************/
 /*!
-
-*/
-/**************************************************************************/
+ * Reads the temperature from the device.
+ * @return The temperature in degress celcius.
+ */
 float Adafruit_BMP280::readTemperature(void)
 {
   int32_t var1, var2;
@@ -295,11 +306,10 @@ float Adafruit_BMP280::readTemperature(void)
   return T/100;
 }
 
-/**************************************************************************/
 /*!
-
-*/
-/**************************************************************************/
+ * Reads the barometric pressure from the device.
+ * @return Barometric pressure in Pa.
+ */
 float Adafruit_BMP280::readPressure(void) {
   int64_t var1, var2, p;
 
@@ -329,6 +339,13 @@ float Adafruit_BMP280::readPressure(void) {
   return (float)p/256;
 }
 
+/*!
+ * @brief Calculates the approximate altitude using barometric pressure and the
+ * supplied sea level hPa as a reference.
+ * @param seaLevelhPa
+ *        The current hPa at sea level.
+ * @return The approximate altitude above sea level in meters.
+ */
 float Adafruit_BMP280::readAltitude(float seaLevelhPa) {
   float altitude;
 
@@ -339,3 +356,18 @@ float Adafruit_BMP280::readAltitude(float seaLevelhPa) {
 
   return altitude;
 }
+
+/*!
+ *  @brief  Resets the chip via soft reset
+ */
+void Adafruit_BMP280::reset(void) {
+  write8(BMP280_REGISTER_SOFTRESET, MODE_SOFT_RESET_CODE);
+}
+
+/*!
+ *   Returns Sensor ID for diagnostics
+ *   @returns 0x61 for BME680, 0x60 for BME280, 0x56, 0x57, 0x58 for BMP280
+ */
+uint8_t Adafruit_BMP280::sensorID(void) {
+  return read8(BMP280_REGISTER_CHIPID);
+};

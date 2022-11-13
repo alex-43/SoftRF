@@ -1,6 +1,6 @@
 /*
  * Platform_RPi.cpp
- * Copyright (C) 2018-2021 Linar Yusupov
+ * Copyright (C) 2018-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -63,6 +63,7 @@
 #include "../driver/EPD.h"
 #include "../driver/Battery.h"
 #include "../driver/Bluetooth.h"
+#include "../system/Time.h"
 
 #include "TCPServer.h"
 
@@ -136,7 +137,12 @@ hardware_info_t hw_info = {
   .rf       = RF_IC_NONE,
   .gnss     = GNSS_MODULE_NONE,
   .baro     = BARO_MODULE_NONE,
-  .display  = DISPLAY_NONE
+  .display  = DISPLAY_NONE,
+  .storage  = STORAGE_NONE,
+  .rtc      = RTC_NONE,
+  .imu      = IMU_NONE,
+  .mag      = MAG_NONE,
+  .pmu      = PMU_NONE,
 };
 
 #define isTimeToExport() (millis() - ExportTimeMarker > 1000)
@@ -147,9 +153,11 @@ std::string input_line;
 TCPServer Traffic_TCP_Server;
 
 #if defined(USE_EPAPER)
-GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> __attribute__ ((common)) epd_waveshare(GxEPD2_270(/*CS=5*/ 8,
+GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> __attribute__ ((common)) epd_waveshare_W3(GxEPD2_270(/*CS=5*/ 8,
                                        /*DC=*/ 25, /*RST=*/ 17, /*BUSY=*/ 24));
-GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> *display;
+GxEPD2_BW<GxEPD2_270_T91, GxEPD2_270_T91::HEIGHT> __attribute__ ((common)) epd_waveshare_T91(GxEPD2_270_T91(/*CS=5*/ 8,
+                                       /*DC=*/ 25, /*RST=*/ 17, /*BUSY=*/ 24));
+GxEPD2_GFX *display;
 #endif /* USE_EPAPER */
 
 ui_settings_t ui_settings = {
@@ -161,7 +169,7 @@ ui_settings_t ui_settings = {
     .baudrate     = 0,
     .server       = { 0 },
     .key          = { 0 },
-    .resvd1       = 0,
+    .rotate       = ROTATE_0,
     .orientation  = DIRECTION_TRACK_UP,
     .adb          = DB_NONE,
     .idpref       = ID_REG,
@@ -174,6 +182,15 @@ ui_settings_t ui_settings = {
 };
 
 ui_settings_t *ui;
+
+const char *Hardware_Rev[] = {
+  [0] = "Unknown"
+};
+
+#include "mode-s.h"
+#include "sdr/common.h"
+
+mode_s_t state;
 
 //-------------------------------------------------------------------------
 //
@@ -314,6 +331,10 @@ static void RPi_setup()
   eeprom_block.field.settings.no_track      = false;
   eeprom_block.field.settings.power_save    = POWER_SAVE_NONE;
   eeprom_block.field.settings.freq_corr     = 0;
+  eeprom_block.field.settings.igc_key[0]    = 0;
+  eeprom_block.field.settings.igc_key[1]    = 0;
+  eeprom_block.field.settings.igc_key[2]    = 0;
+  eeprom_block.field.settings.igc_key[3]    = 0;
 
   ui = &ui_settings;
 
@@ -340,21 +361,32 @@ static void RPi_post_init()
   Serial.print(F("BMx280  : ")); Serial.println(hw_info.baro    != BARO_MODULE_NONE ? F("PASS") : F("N/A"));
 
   Serial.println();
-  Serial.println(F("Power-on Self Test is completed."));
+  Serial.println(F("Power-on Self Test is complete."));
   Serial.println();
   Serial.flush();
 #endif
 
 #if defined(USE_EPAPER)
 
-  EPD_info1(false, false);
+  EPD_info1();
 
 #endif /* USE_EPAPER */
 }
 
+static bool prev_PPS_state = LOW;
+
 static void RPi_loop()
 {
+#if SOC_GPIO_PIN_GNSS_PPS != SOC_UNUSED_PIN
+  if (digitalPinToInterrupt(SOC_GPIO_PIN_GNSS_PPS) == NOT_AN_INTERRUPT) {
+    bool PPS_state = digitalRead(SOC_GPIO_PIN_GNSS_PPS);
 
+    if (PPS_state == HIGH && prev_PPS_state == LOW) {
+      PPS_TimeMarker = millis();
+    }
+    prev_PPS_state = PPS_state;
+  }
+#endif
 }
 
 static void RPi_fini(int reason)
@@ -405,7 +437,7 @@ static void RPi_SPI_begin()
 
 static void RPi_swSer_begin(unsigned long baud)
 {
-  swSer.begin(baud);
+  Serial_GNSS_In.begin(baud);
 }
 
 pthread_t RPi_EPD_update_thread;
@@ -415,10 +447,12 @@ static byte RPi_Display_setup()
   byte rval = DISPLAY_NONE;
 
 #if defined(USE_EPAPER)
-// GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> *epd_waveshare = new GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT>(GxEPD2_270(/*CS=5*/ 8,
-//                                       /*DC=*/ 25, /*RST=*/ 17, /*BUSY=*/ 24));
 
-  display = &epd_waveshare;
+#if !defined(USE_GDEY027T91)
+  display = &epd_waveshare_W3;
+#else
+  display = &epd_waveshare_T91;
+#endif /* USE_GDEY027T91 */
 
   if (EPD_setup(true)) {
 
@@ -453,8 +487,7 @@ static void RPi_Display_fini(int reason)
 {
 #if defined(USE_EPAPER)
 
-  EPD_Clear_Screen();
-  EPD_fini(reason);
+  EPD_fini(reason, false);
 
   if ( RPi_EPD_update_thread != (pthread_t) 0)
   {
@@ -602,7 +635,8 @@ const SoC_ops_t RPi_ops = {
   RPi_WDT_fini,
   RPi_Button_setup,
   RPi_Button_loop,
-  RPi_Button_fini
+  RPi_Button_fini,
+  NULL
 };
 
 static bool inputAvailable()
@@ -788,11 +822,12 @@ void normal_loop()
     }
 
     if (isTimeToExport()) {
+
       NMEA_Export();
+      GDL90_Export();
+      D1090_Export();
 
       if (isValidFix()) {
-        GDL90_Export();
-        D1090_Export();
         JSON_Export();
       }
       ExportTimeMarker = millis();
@@ -979,6 +1014,41 @@ void * traffic_tcpserv_loop(void * m)
   Traffic_TCP_Server.receive();
 }
 
+extern "C" void *readerThreadEntryPoint(void *arg);
+extern "C" void ModeS_demod_loop(mode_s_callback_t);
+
+void on_msg(mode_s_t *self, struct mode_s_msg *mm) {
+
+  MODES_NOTUSED(self);
+
+  rx_packets_counter++;
+
+/* When a new message is available, because it was decoded from the
+ * SDR device, file, or received in the TCP input port, or any other
+ * way we can receive a decoded message, we call this function in order
+ * to use the message.
+ *
+ * Basically this function passes a raw message to the upper layers for
+ * further processing and visualization. */
+
+    if (self->check_crc == 0 || mm->crcok) {
+
+//    printf("%02d %03d %02x%02x%02x\r\n", mm->msgtype, mm->msgbits, mm->aa1, mm->aa2, mm->aa3);
+
+        int acfts_in_sight = 0;
+        struct mode_s_aircraft *a = state.aircrafts;
+
+        while (a) {
+          acfts_in_sight++;
+          a = a->next;
+        }
+
+        if (acfts_in_sight < MAX_TRACKING_OBJECTS) {
+          interactiveReceiveData(self, mm);
+        }
+    }
+}
+
 int main()
 {
   // Init GPIO bcm
@@ -992,12 +1062,44 @@ int main()
   hw_info.soc = SoC_setup(); // Has to be very first procedure in the execution order
 
   Serial.println();
-  Serial.print(F(SOFTRF_IDENT));
+  Serial.print(F(SOFTRF_IDENT "-"));
   Serial.print(SoC->name);
   Serial.print(F(" FW.REV: " SOFTRF_FIRMWARE_VERSION " DEV.ID: "));
   Serial.println(String(SoC->getChipId(), HEX));
-  Serial.println(F("Copyright (C) 2015-2021 Linar Yusupov. All rights reserved."));
+  Serial.println(F("Copyright (C) 2015-2022 Linar Yusupov. All rights reserved."));
   Serial.flush();
+
+  mode_s_init(&state);
+
+#if defined(ENABLE_RTLSDR) || defined(ENABLE_HACKRF) || defined(ENABLE_MIRISDR)
+  sdrInitConfig();
+
+  // Allocate the various buffers used by Modes
+  state.trailing_samples = (MODES_PREAMBLE_US + MODES_LONG_MSG_BITS + 16) * 1e-6 * state.sample_rate;
+
+  if (!fifo_create(MODES_MAG_BUFFERS, MODES_MAG_BUF_SAMPLES + state.trailing_samples, state.trailing_samples)) {
+      fprintf(stderr, "Out of memory allocating FIFO\n");
+      exit(EXIT_FAILURE);
+  }
+#endif /* ENABLE_RTLSDR || ENABLE_HACKRF || ENABLE_MIRISDR */
+
+#if defined(ENABLE_RTLSDR)
+  if (state.sdr_type = SDR_RTLSDR, sdrOpen()) {
+    hw_info.rf = RF_IC_R820T;
+  } else
+#endif /* ENABLE_RTLSDR */
+
+#if defined(ENABLE_HACKRF)
+  if (state.sdr_type = SDR_HACKRF, sdrOpen()) {
+    hw_info.rf = RF_IC_MAX2837;
+  } else
+#endif /* ENABLE_HACKRF */
+
+#if defined(ENABLE_MIRISDR)
+  if (state.sdr_type = SDR_MIRI, sdrOpen()) {
+    hw_info.rf = RF_IC_MSI001;
+  } else
+#endif /* ENABLE_MIRISDR */
 
   hw_info.rf = RF_setup();
 
@@ -1005,6 +1107,16 @@ int main()
       exit(EXIT_FAILURE);
   }
 
+#if defined(ENABLE_RTLSDR) || defined(ENABLE_HACKRF) || defined(ENABLE_MIRISDR)
+  if (hw_info.rf == RF_IC_R820T   ||
+      hw_info.rf == RF_IC_MAX2837 ||
+      hw_info.rf == RF_IC_MSI001) {
+    // Create the thread that will read the data from the device.
+    pthread_create(&state.reader_thread, NULL, readerThreadEntryPoint, NULL);
+  }
+#endif /* ENABLE_RTLSDR || ENABLE_HACKRF || ENABLE_MIRISDR */
+
+#if defined(USE_EPAPER)
   Serial.print("Intializing E-ink display module (may take up to 10 seconds)... ");
   Serial.flush();
   hw_info.display = SoC->Display_setup();
@@ -1013,6 +1125,7 @@ int main()
   } else {
     Serial.println(" failed!");
   }
+#endif /* USE_EPAPER */
 
   ThisAircraft.addr = SoC->getChipId() & 0x00FFFFFF;
   ThisAircraft.aircraft_type = settings->aircraft_type;
@@ -1052,6 +1165,12 @@ int main()
       normal_loop();
       break;
     }
+
+#if defined(ENABLE_RTLSDR) || defined(ENABLE_HACKRF) || defined(ENABLE_MIRISDR)
+    ModeS_demod_loop(on_msg);
+#endif /* ENABLE_RTLSDR || ENABLE_HACKRF || ENABLE_MIRISDR */
+
+    SoC->loop();
 
 #if defined(TAKE_CARE_OF_MILLIS_ROLLOVER)
     /* take care of millis() rollover on a long term run */

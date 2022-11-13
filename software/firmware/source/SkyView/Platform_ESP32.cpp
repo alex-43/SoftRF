@@ -1,6 +1,6 @@
 /*
  * Platform_ESP32.cpp
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@
 #include <esp_wifi.h>
 #include <soc/rtc_cntl_reg.h>
 #include <rom/spi_flash.h>
+#include <soc/adc_channel.h>
 #include <flashchips.h>
 
 #include "SoCHelper.h"
@@ -85,7 +86,8 @@ P2                      0
                         34
                         35 (BAT)
  */
-GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> epd_ttgo_t5s(GxEPD2_270(/*CS=5*/ 5, /*DC=*/ 17, /*RST=*/ 16, /*BUSY=*/ 4));
+GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> epd_ttgo_t5s_W3(GxEPD2_270(/*CS=5*/ 5, /*DC=*/ 17, /*RST=*/ 16, /*BUSY=*/ 4));
+GxEPD2_BW<GxEPD2_270_T91, GxEPD2_270_T91::HEIGHT> epd_ttgo_t5s_T91(GxEPD2_270_T91(/*CS=5*/ 5, /*DC=*/ 17, /*RST=*/ 16, /*BUSY=*/ 4));
 
 /*
  * Waveshare E-Paper ESP32 Driver Board
@@ -104,7 +106,8 @@ RX0, TX0                3,1
 
 P                       0,2,4,5,12,13,14,15,16,17,18,19,21,22,23,25,26,27,32,33,34,35
  */
-GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> epd_waveshare(GxEPD2_270(/*CS=15*/ 15, /*DC=*/ 27, /*RST=*/ 26, /*BUSY=*/ 25));
+GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> epd_waveshare_W3(GxEPD2_270(/*CS=15*/ 15, /*DC=*/ 27, /*RST=*/ 26, /*BUSY=*/ 25));
+GxEPD2_BW<GxEPD2_270_T91, GxEPD2_270_T91::HEIGHT> epd_waveshare_T91(GxEPD2_270_T91(/*CS=15*/ 15, /*DC=*/ 27, /*RST=*/ 26, /*BUSY=*/ 25));
 
 static union {
   uint8_t efuse_mac[6];
@@ -347,15 +350,76 @@ static float ESP32_Battery_voltage()
           2 * voltage : voltage);
 }
 
+#include <SoftSPI.h>
+SoftSPI swSPI(SOC_GPIO_PIN_MOSI_T5S,
+              SOC_GPIO_PIN_MOSI_T5S, /* half duplex */
+              SOC_GPIO_PIN_SCK_T5S);
+
+static portMUX_TYPE EPD_ident_mutex;
+
+static ep_model_id ESP32_EPD_ident()
+{
+  ep_model_id rval = EP_GDEW027W3; /* default */
+  vPortCPUInitializeMutex(&EPD_ident_mutex);
+
+  digitalWrite(SOC_GPIO_PIN_SS_T5S, HIGH);
+  pinMode(SOC_GPIO_PIN_SS_T5S, OUTPUT);
+  digitalWrite(SOC_EPD_PIN_DC_T5S, HIGH);
+  pinMode(SOC_EPD_PIN_DC_T5S, OUTPUT);
+
+  digitalWrite(SOC_EPD_PIN_RST_T5S, LOW);
+  pinMode(SOC_EPD_PIN_RST_T5S, OUTPUT);
+  delay(20);
+  pinMode(SOC_EPD_PIN_RST_T5S, INPUT_PULLUP);
+  delay(200);
+  pinMode(SOC_EPD_PIN_BUSY_T5S, INPUT);
+
+  swSPI.begin();
+
+  taskENTER_CRITICAL(&EPD_ident_mutex);
+
+  digitalWrite(SOC_EPD_PIN_DC_T5S,  LOW);
+  digitalWrite(SOC_GPIO_PIN_SS_T5S, LOW);
+
+  swSPI.transfer_out(0x71);
+
+  pinMode(SOC_GPIO_PIN_MOSI_T5S, INPUT);
+  digitalWrite(SOC_EPD_PIN_DC_T5S, HIGH);
+
+  uint8_t status = swSPI.transfer_in();
+
+  digitalWrite(SOC_GPIO_PIN_SCK_T5S, LOW);
+  digitalWrite(SOC_EPD_PIN_DC_T5S,  LOW);
+  digitalWrite(SOC_GPIO_PIN_SS_T5S,  HIGH);
+
+  taskEXIT_CRITICAL(&EPD_ident_mutex);
+
+  swSPI.end();
+
+#if 0
+  Serial.print("REG 71H: ");
+  Serial.println(status, HEX);
+#endif
+
+//  if (status != 2) {
+//    rval = EP_GDEY027T91; /* TBD */
+//  }
+
+  return rval;
+}
+
 #define EPD_STACK_SZ      (256*4)
 static TaskHandle_t EPD_Task_Handle = NULL;
+
+static ep_model_id ESP32_display = EP_UNKNOWN;
 
 static void ESP32_EPD_setup()
 {
   switch(settings->adapter)
   {
   case ADAPTER_WAVESHARE_ESP32:
-    display = &epd_waveshare;
+    display = &epd_waveshare_W3;
+//    display = &epd_waveshare_T91;
     SPI.begin(SOC_GPIO_PIN_SCK_WS,
               SOC_GPIO_PIN_MISO_WS,
               SOC_GPIO_PIN_MOSI_WS,
@@ -368,7 +432,21 @@ static void ESP32_EPD_setup()
 #endif /* BUILD_SKYVIEW_HD */
   case ADAPTER_TTGO_T5S:
   default:
-    display = &epd_ttgo_t5s;
+    if (ESP32_display == EP_UNKNOWN) {
+      ESP32_display = ESP32_EPD_ident();
+    }
+
+    switch (ESP32_display)
+    {
+    case EP_GDEY027T91:
+      display = &epd_ttgo_t5s_T91;
+      break;
+    case EP_GDEW027W3:
+    default:
+      display = &epd_ttgo_t5s_W3;
+      break;
+    }
+
     SPI.begin(SOC_GPIO_PIN_SCK_T5S,
               SOC_GPIO_PIN_MISO_T5S,
               SOC_GPIO_PIN_MOSI_T5S,
@@ -633,8 +711,14 @@ static void ESP32_DB_fini()
 /* write sample data to I2S */
 int i2s_write_sample_nb(uint32_t sample)
 {
+#if ESP_IDF_VERSION_MAJOR>=4
+    size_t i2s_bytes_written;
+    i2s_write((i2s_port_t)i2s_num, (const char*)&sample, sizeof(uint32_t), &i2s_bytes_written, 100);
+    return i2s_bytes_written;
+#else
   return i2s_write_bytes((i2s_port_t)i2s_num, (const char *)&sample,
                           sizeof(uint32_t), 100);
+#endif
 }
 
 /* read 4 bytes of data from wav file */

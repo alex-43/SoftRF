@@ -4,7 +4,7 @@
 #  Flight Recorder for TTGO T-Watch 2019
 #
 #  File name: watch.py
-#  Copyright (C) 2019-2021 Linar Yusupov
+#  Copyright (C) 2019-2022 Linar Yusupov
 # 
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -70,7 +70,7 @@ SDFolder       = '/sd'
 LogFolder      = '/Flights'
 IGCSUFFIX      = '.IGC'
 
-SETTINGS       = 'settings.py'
+SETTINGS       = 'mysettings.py'
 
 ICON_LOGO      = '/flash/icons/logo.bmp'
 ICON_NOSD      = '/flash/icons/nosd.jpg'

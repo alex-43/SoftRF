@@ -3,20 +3,36 @@
 #include <SdFat.h>
 #include <Adafruit_SPIFlash.h>
 
-// On-board external flash (QSPI or SPI) macros should already
-// defined in your board variant if supported
-// - EXTERNAL_FLASH_USE_QSPI
-// - EXTERNAL_FLASH_USE_CS/EXTERNAL_FLASH_USE_SPI
-#if defined(EXTERNAL_FLASH_USE_QSPI)
-  Adafruit_FlashTransport_QSPI flashTransport;
+#if defined(ARDUINO_ARCH_ESP32)
+  // ESP32 use same flash device that store code.
+  // Therefore there is no need to specify the SPI and SS
+  Adafruit_FlashTransport_ESP32 flashTransport;
 
-#elif defined(EXTERNAL_FLASH_USE_SPI)
-  Adafruit_FlashTransport_SPI flashTransport(EXTERNAL_FLASH_USE_CS, EXTERNAL_FLASH_USE_SPI);
+#elif defined(ARDUINO_ARCH_RP2040)
+  // RP2040 use same flash device that store code.
+  // Therefore there is no need to specify the SPI and SS
+  // Use default (no-args) constructor to be compatible with CircuitPython partition scheme
+  Adafruit_FlashTransport_RP2040 flashTransport;
+
+  // For generic usage: Adafruit_FlashTransport_RP2040(start_address, size)
+  // If start_address and size are both 0, value that match filesystem setting in
+  // 'Tools->Flash Size' menu selection will be used
 
 #else
-  #error No QSPI/SPI flash are defined on your board variant.h !
-#endif
+  // On-board external flash (QSPI or SPI) macros should already
+  // defined in your board variant if supported
+  // - EXTERNAL_FLASH_USE_QSPI
+  // - EXTERNAL_FLASH_USE_CS/EXTERNAL_FLASH_USE_SPI
+  #if defined(EXTERNAL_FLASH_USE_QSPI)
+    Adafruit_FlashTransport_QSPI flashTransport;
 
+  #elif defined(EXTERNAL_FLASH_USE_SPI)
+    Adafruit_FlashTransport_SPI flashTransport(EXTERNAL_FLASH_USE_CS, EXTERNAL_FLASH_USE_SPI);
+
+  #else
+    #error No QSPI/SPI flash are defined on your board variant.h !
+  #endif
+#endif
 
 Adafruit_SPIFlash flash(&flashTransport);
 
@@ -30,7 +46,7 @@ File dataFile;
 uint8_t buffer[MAXPAGESIZE], buffer2[MAXPAGESIZE];
 uint32_t results;
 
-void error(char *str) {
+void error(const char *str) {
   Serial.println(str);
   while (1) delay(1);
 }
@@ -51,7 +67,7 @@ void setup(void)
   if (!sd.begin(SD_CS, SD_SCK_MHZ(50))) {
     Serial.println("Card failed, or not present");
     // don't do anything more:
-    while (1);
+    while (1) delay(1);
   }
 
   Serial.println("OK");

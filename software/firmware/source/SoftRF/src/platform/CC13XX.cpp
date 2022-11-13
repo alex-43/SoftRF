@@ -1,6 +1,6 @@
 /*
  * Platform_CC13XX.cpp
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@
 #include "../driver/LED.h"
 #include "../driver/Sound.h"
 #include "../driver/OLED.h"
+#include "../driver/Baro.h"
 #include "../driver/Battery.h"
 #include "../protocol/data/NMEA.h"
 #include "../protocol/data/GDL90.h"
@@ -79,9 +80,64 @@ static struct rst_info reset_info = {
   .reason = REASON_DEFAULT_RST,
 };
 
-static uint32_t bootCount = 0;
+static uint32_t bootCount __attribute__ ((section (".noinit")));
 static int cc13xx_board = SOFTRF_UAT_MODULE_19; /* default */
 static uint32_t cc13xx_vdd = 0;
+
+char* ltoa( long value, char *string, int radix )
+{
+  char tmp[33];
+  char *tp = tmp;
+  long i;
+  unsigned long v;
+  int sign;
+  char *sp;
+
+  if ( string == NULL )
+  {
+    return 0 ;
+  }
+
+  if (radix > 36 || radix <= 1)
+  {
+    return 0 ;
+  }
+
+  sign = (radix == 10 && value < 0);
+  if (sign)
+  {
+    v = -value;
+  }
+  else
+  {
+    v = (unsigned long)value;
+  }
+
+  while (v || tp == tmp)
+  {
+    i = v % radix;
+    v = v / radix;
+    if (i < 10)
+      *tp++ = i+'0';
+    else
+      *tp++ = i + 'a' - 10;
+  }
+
+  sp = string;
+
+  if (sign)
+    *sp++ = '-';
+  while (tp > tmp)
+    *sp++ = *--tp;
+  *sp = 0;
+
+  return string;
+}
+
+char* itoa( int value, char *string, int radix )
+{
+  return ltoa( value, string, radix ) ;
+}
 
 #if defined(ENERGIA_ARCH_CC13XX)
 
@@ -205,64 +261,15 @@ size_t strnlen (const char *string, size_t length)
    return ret ? ret - string : length;
 }
 
-char* ltoa( long value, char *string, int radix )
-{
-  char tmp[33];
-  char *tp = tmp;
-  long i;
-  unsigned long v;
-  int sign;
-  char *sp;
-
-  if ( string == NULL )
-  {
-    return 0 ;
-  }
-
-  if (radix > 36 || radix <= 1)
-  {
-    return 0 ;
-  }
-
-  sign = (radix == 10 && value < 0);
-  if (sign)
-  {
-    v = -value;
-  }
-  else
-  {
-    v = (unsigned long)value;
-  }
-
-  while (v || tp == tmp)
-  {
-    i = v % radix;
-    v = v / radix;
-    if (i < 10)
-      *tp++ = i+'0';
-    else
-      *tp++ = i + 'a' - 10;
-  }
-
-  sp = string;
-
-  if (sign)
-    *sp++ = '-';
-  while (tp > tmp)
-    *sp++ = *--tp;
-  *sp = 0;
-
-  return string;
-}
-
-char* itoa( int value, char *string, int radix )
-{
-  return ltoa( value, string, radix ) ;
-}
-
 #else
 #error "This hardware platform is not supported!"
 #endif /* ENERGIA_ARCH_CC13X0 & ENERGIA_ARCH_CC13X2 */
+
+#if defined(USE_OLED)
+#include <ti/drivers/I2C.h>
+
+static bool CC13XX_has_OLED = false;
+#endif /* USE_OLED */
 
 static void CC13XX_setup()
 {
@@ -324,6 +331,7 @@ static void CC13XX_setup()
       cc13xx_board = TI_CC1352R1_LAUNCHXL;
     } else {
       cc13xx_board = TI_LPSTK_CC1352R;
+      hw_info.imu  = ACC_ADXL362;
     }
   } else {
     cc13xx_board  = SOFTRF_UAT_MODULE_20;
@@ -338,11 +346,95 @@ static void CC13XX_setup()
   }
 #endif /* ENERGIA_ARCH_CC13X2 */
 
+#if defined(USE_OLED)
+  uint8_t txBuffer[2] = { 0x00 };
+  uint8_t rxBuffer[6] = { 0x00 };
+
+  I2C_Handle i2c;
+  I2C_Params i2cParams;
+  I2C_Transaction i2cTransaction;
+
+  I2C_init();
+  I2C_Params_init(&i2cParams);
+  i2cParams.bitRate = I2C_400kHz;
+  i2c = I2C_open(Board_I2C, &i2cParams);
+
+  if (i2c != NULL) {
+    i2cTransaction.writeBuf = txBuffer;
+    i2cTransaction.readBuf = rxBuffer;
+    i2cTransaction.writeCount = 1;
+    i2cTransaction.readCount = 0;
+
+    i2cTransaction.slaveAddress = SSD1306_OLED_I2C_ADDR;
+    txBuffer[0] = 0x00;
+
+    CC13XX_has_OLED = I2C_transfer(i2c, &i2cTransaction);
+
+    I2C_close(i2c);
+  }
+#endif /* USE_OLED */
+
   hw_info.revision = cc13xx_board;
+
+  Serial.begin(SERIAL_OUT_BR, SERIAL_OUT_BITS);
 }
 
 static void CC13XX_post_init()
 {
+  Serial.println();
+  Serial.print(F("SoftRF "));
+  Serial.print(hw_info.model == SOFTRF_MODEL_UNI ? F("Uni") : F("UAT"));
+  Serial.println(F(" Edition Power-on Self Test"));
+  Serial.println();
+  Serial.flush();
+
+  Serial.println(F("Components:"));
+
+  Serial.print(F("RADIO   : "));
+  Serial.println(hw_info.rf      == RF_IC_CC13XX      ? F("PASS") : F("FAIL"));
+  Serial.print(F("GNSS    : "));
+  Serial.println(hw_info.gnss    != GNSS_MODULE_NONE  ? F("PASS") : F("N/A"));
+  Serial.print(F("BARO    : "));
+  Serial.println(hw_info.baro    != BARO_MODULE_NONE  ? F("PASS") : F("N/A"));
+#if defined(USE_OLED)
+  Serial.print(F("DISPLAY : "));
+  Serial.println(hw_info.display != DISPLAY_NONE      ? F("PASS") : F("N/A"));
+#endif /* USE_OLED */
+
+  Serial.println();
+  Serial.println(F("Power-on Self Test is complete."));
+  Serial.println();
+  Serial.flush();
+
+  Serial.println(F("Data output device(s):"));
+
+  Serial.print(F("NMEA   - "));
+  switch (settings->nmea_out)
+  {
+    case NMEA_UART       :  Serial.println(F("UART"));    break;
+    case NMEA_OFF        :
+    default              :  Serial.println(F("NULL"));    break;
+  }
+
+  Serial.print(F("GDL90  - "));
+  switch (settings->gdl90)
+  {
+    case GDL90_UART      :  Serial.println(F("UART"));    break;
+    case GDL90_OFF       :
+    default              :  Serial.println(F("NULL"));    break;
+  }
+
+  Serial.print(F("D1090  - "));
+  switch (settings->d1090)
+  {
+    case D1090_UART      :  Serial.println(F("UART"));    break;
+    case D1090_OFF       :
+    default              :  Serial.println(F("NULL"));    break;
+  }
+
+  Serial.println();
+  Serial.flush();
+
 #if defined(USE_OLED)
   OLED_info1();
 #endif /* USE_OLED */
@@ -498,16 +590,27 @@ static bool CC13XX_EEPROM_begin(size_t size)
   return true;
 }
 
-static void CC13XX_EEPROM_extension()
+static void CC13XX_EEPROM_extension(int cmd)
 {
-  if (settings->nmea_out == NMEA_USB || settings->nmea_out == NMEA_BLUETOOTH) {
-    settings->nmea_out = NMEA_UART;
-  }
-  if (settings->gdl90 == GDL90_USB || settings->gdl90 == GDL90_BLUETOOTH) {
-    settings->gdl90 = GDL90_UART;
-  }
-  if (settings->d1090 == D1090_USB || settings->d1090 == D1090_BLUETOOTH) {
-    settings->d1090 = D1090_UART;
+  if (cmd == EEPROM_EXT_LOAD) {
+    if (settings->mode != SOFTRF_MODE_NORMAL
+#if !defined(EXCLUDE_TEST_MODE)
+        &&
+        settings->mode != SOFTRF_MODE_TXRX_TEST
+#endif /* EXCLUDE_TEST_MODE */
+        ) {
+      settings->mode = SOFTRF_MODE_NORMAL;
+    }
+
+    if (settings->nmea_out != NMEA_OFF) {
+      settings->nmea_out = NMEA_UART;
+    }
+    if (settings->gdl90 != GDL90_OFF) {
+      settings->gdl90 = GDL90_UART;
+    }
+    if (settings->d1090 != D1090_OFF) {
+      settings->d1090 = D1090_UART;
+    }
   }
 }
 
@@ -519,15 +622,22 @@ static void CC13XX_SPI_begin()
 
 static void CC13XX_swSer_begin(unsigned long baud)
 {
-  swSer.begin(baud);
+  Serial_GNSS_In.begin(baud);
 }
 
 static void CC13XX_swSer_enableRx(boolean arg)
 {
 #if defined(ENERGIA_ARCH_CC13XX)
-  swSer.enableRx(arg);
+  Serial_GNSS_In.enableRx(arg);
 #endif /* ENERGIA_ARCH_CC13XX */
 }
+
+#if defined(USE_OLED)
+bool CC13XX_OLED_probe_func()
+{
+  return CC13XX_has_OLED;
+}
+#endif /* USE_OLED */
 
 static byte CC13XX_Display_setup()
 {
@@ -709,6 +819,7 @@ static void CC13XX_Button_setup()
   pinMode(PUSH1, INPUT_PULLUP);
 
   BootManagerCheck();
+#endif /* ENERGIA_ARCH_CC13X2 */
 
 #if SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN
   int button_pin = SOC_GPIO_PIN_BUTTON;
@@ -730,7 +841,6 @@ static void CC13XX_Button_setup()
   PageButtonConfig->setLongPressDelay(2000);
 
 #endif /* SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN */
-#endif /* ENERGIA_ARCH_CC13X2 */
 }
 
 static void CC13XX_Button_loop()
@@ -743,28 +853,32 @@ static void CC13XX_Button_loop()
     Serial.flush();
   }
 #endif
+#endif /* ENERGIA_ARCH_CC13X2 */
 
 #if SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN
   button_1.check();
 #endif /* SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN */
-
-#endif /* ENERGIA_ARCH_CC13X2 */
 }
 
 static void CC13XX_Button_fini()
 {
 #if defined(ENERGIA_ARCH_CC13X2)
   pinMode(PUSH1, INPUT);
+#endif /* ENERGIA_ARCH_CC13X2 */
 
 #if SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN
   pinMode(SOC_GPIO_PIN_BUTTON, INPUT);
 #endif /* SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN */
-#endif /* ENERGIA_ARCH_CC13X2 */
 }
 
 const SoC_ops_t CC13XX_ops = {
-  SOC_CC13XX,
-  "CC13XX",
+#if defined(ENERGIA_ARCH_CC13XX)
+  SOC_CC13X0,
+  "CC13X0",
+#elif defined(ENERGIA_ARCH_CC13X2)
+  SOC_CC13X2,
+  "CC13X2",
+#endif /* ENERGIA_ARCH_CC13XX || ENERGIA_ARCH_CC13X2 */
   CC13XX_setup,
   CC13XX_post_init,
   CC13XX_loop,
@@ -806,7 +920,8 @@ const SoC_ops_t CC13XX_ops = {
   CC13XX_WDT_fini,
   CC13XX_Button_setup,
   CC13XX_Button_loop,
-  CC13XX_Button_fini
+  CC13XX_Button_fini,
+  NULL
 };
 
 #endif /* ENERGIA_ARCH_CC13XX || ENERGIA_ARCH_CC13X2 */

@@ -1,6 +1,6 @@
 /*
  * Platform_ESP32.h
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,11 +35,15 @@
 #define MAX_TRACKING_OBJECTS            9
 
 #define SerialInput                     Serial1
+#define Serial_GNSS_In                  Serial
+#define Serial_GNSS_Out                 Serial
+#define SERIAL_GNSS_BR                  9600
 
 /* TTGO T-Watch section */
 // GNSS module
 #define SOC_GPIO_PIN_GNSS_RX            34
 #define SOC_GPIO_PIN_GNSS_TX            33
+#define SOC_GPIO_PIN_GNSS_PPS           SOC_UNUSED_PIN
 
 // button
 #define SOC_GPIO_PIN_TWATCH_BUTTON      36
@@ -55,10 +59,6 @@
 #define SOC_GPIO_PIN_TWATCH_TFT_DC      27
 #define SOC_GPIO_PIN_TWATCH_TFT_RST     SOC_UNUSED_PIN
 #define SOC_GPIO_PIN_TWATCH_TFT_BL      12
-
-#define LV_HOR_RES                      (240) //Horizontal
-#define LV_VER_RES                      (240) //vertical
-#define BACKLIGHT_CHANNEL               ((uint8_t)1)
 
 /* 1st I2C bus on the T-Watch */
 #define SOC_GPIO_PIN_TWATCH_EXT_SDA     25
@@ -90,6 +90,60 @@
 #define SOC_GPIO_PIN_LRCLK              25
 #define SOC_GPIO_PIN_DOUT               19
 
+/* TTGO T-Dongle S2 section */
+#define SOC_GPIO_PIN_TDONGLE_CONS_RX    43 // 44
+#define SOC_GPIO_PIN_TDONGLE_CONS_TX    44 // 43
+
+// USB
+#define SOC_GPIO_PIN_TDONGLE_USB_DP     20
+#define SOC_GPIO_PIN_TDONGLE_USB_DN     19
+
+// SD SPI
+#define SOC_GPIO_PIN_TDONGLE_MOSI       11
+#define SOC_GPIO_PIN_TDONGLE_MISO       13
+#define SOC_GPIO_PIN_TDONGLE_SCK        12
+#define SOC_GPIO_PIN_TDONGLE_SS         10
+
+// TFT
+#define SOC_GPIO_PIN_TDONGLE_TFT_MOSI   35
+#define SOC_GPIO_PIN_TDONGLE_TFT_MISO   41 /* MTDI, NC */
+#define SOC_GPIO_PIN_TDONGLE_TFT_SCK    36
+#define SOC_GPIO_PIN_TDONGLE_TFT_SS     34
+#define SOC_GPIO_PIN_TDONGLE_TFT_DC     37
+#define SOC_GPIO_PIN_TDONGLE_TFT_RST    38
+#define SOC_GPIO_PIN_TDONGLE_TFT_BL     33
+
+// button
+#define SOC_GPIO_PIN_TDONGLE_BUTTON     0
+
+// I2C
+#define SOC_GPIO_PIN_TDONGLE_SDA        3
+#define SOC_GPIO_PIN_TDONGLE_SCL        4
+
+// battery voltage
+#define SOC_GPIO_PIN_TDONGLE_BATTERY    SOC_UNUSED_PIN
+
+// V3V Power enable
+#define SOC_GPIO_PIN_TDONGLE_PWR_EN     SOC_UNUSED_PIN
+
+// 32768 Hz crystal
+#define SOC_GPIO_PIN_TDONGLE_XP         SOC_UNUSED_PIN //  15
+#define SOC_GPIO_PIN_TDONGLE_XN         SOC_UNUSED_PIN //  16
+
+#define SOC_GPIO_PIN_TDONGLE_LED        39
+
+#if !defined(CONFIG_IDF_TARGET_ESP32S2)
+#define LV_HOR_RES                      (240) //Horizontal
+#else
+#define LV_HOR_RES                      (135) //Horizontal
+#endif
+#define LV_VER_RES                      (240) //vertical
+#define BACKLIGHT_CHANNEL               ((uint8_t)1)
+
+/* Boya Microelectronics Inc. */
+#define BOYA_ID                 0x68
+#define BOYA_BY25Q32AL          0x4016
+
 #define MakeFlashId(v,d)      ((v  << 16) | d)
 #define CCCC(c1, c2, c3, c4)  ((c4 << 24) | (c3 << 16) | (c2 << 8) | c1)
 
@@ -118,6 +172,13 @@ typedef struct wavProperties_s {
     uint16_t bitsPerSample;
 } wavProperties_t;
 
+enum softrf_usb_pid {
+  SOFTRF_USB_PID_WEBTOP     = 0x8131,
+  SOFTRF_USB_PID_STANDALONE = 0x8132,
+  SOFTRF_USB_PID_PRIME_MK3  = 0x8133,
+  SOFTRF_USB_PID_UF2_BOOT   = 0x8134,
+};
+
 extern bool loopTaskWDTEnabled;
 
 extern WebServer server;
@@ -134,6 +195,19 @@ extern PCF8563_Class *rtc;
 #define DEBUG_POWER 0
 
 #define EB_S76G_1_3
+
+#if (defined(CONFIG_IDF_TARGET_ESP32S2) || defined(CONFIG_IDF_TARGET_ESP32S3)) && \
+    (ARDUINO_USB_ON_BOOT == 0)
+
+/* Experimental */
+#define USE_USB_HOST
+//#define ENABLE_USB_HOST_DEBUG
+
+#define EXCLUDE_GNSS_GOKE
+#define EXCLUDE_GNSS_AT65
+#define EXCLUDE_GNSS_SONY
+#define EXCLUDE_LOG_GNSS_VERSION
+#endif /* CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3 */
 
 #endif /* PLATFORM_ESP32_H */
 

@@ -1,6 +1,6 @@
 /*
  * LEDHelper.h
- * Copyright (C) 2016-2021 Linar Yusupov
+ * Copyright (C) 2016-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -62,12 +62,15 @@ enum
 enum
 {
 	DISPLAY_NONE,
-	DISPLAY_OLED_HELTEC,
-	DISPLAY_OLED_TTGO,
-	DISPLAY_OLED_0_49,
-	DISPLAY_TFT_TTGO,
+	DISPLAY_OLED_HELTEC, /* 0.96", 128X64, SSD1306, RST */
+	DISPLAY_OLED_TTGO,   /* 0.96", 128X64, SSD1306 */
+	DISPLAY_OLED_0_49,   /* 0.49",  64X32, SSD1306 */
+	DISPLAY_OLED_1_3,    /* 1.3" , 128X64, SH1106  */
+	DISPLAY_TFT_TTGO_240,
+	DISPLAY_TFT_TTGO_135,
+	DISPLAY_TFT_PORTAPACK,
 	DISPLAY_EPD_2_7,
-	DISPLAY_EPD_1_54
+	DISPLAY_EPD_1_54,
 };
 
 void LED_setup();

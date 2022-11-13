@@ -1,6 +1,6 @@
 /*
  * SoCHelper.h
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,12 +24,12 @@
 #include "SkyWatch.h"
 #include "Platform_ESP8266.h"
 #include "Platform_ESP32.h"
-#include "BluetoothHelper.h"
 
 typedef struct SoC_ops_struct {
   uint8_t id;
   const char name[16];
   void (*setup)();
+  void (*post_init)();
   void (*loop)();
   void (*fini)();
   void (*reset)();
@@ -58,7 +58,8 @@ typedef struct SoC_ops_struct {
   void (*WDT_setup)();
   void (*WDT_fini)();
   void (*Service_Mode)(boolean);
-  Bluetooth_ops_t *Bluetooth;
+  IODev_ops_t *Bluetooth_ops;
+  IODev_ops_t *USB_ops;
 } SoC_ops_t;
 
 enum

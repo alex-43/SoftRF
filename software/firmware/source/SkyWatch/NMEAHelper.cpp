@@ -1,6 +1,6 @@
 /*
  * NMEAHelper.cpp
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@
 #include "TrafficHelper.h"
 #include "EEPROMHelper.h"
 #include "WiFiHelper.h"
+#include "GNSSHelper.h"
 
 TinyGPSPlus nmea;
 
@@ -49,11 +50,35 @@ TinyGPSCustom S_AlarmType       (nmea, "PFLAU", 7);
 TinyGPSCustom S_RelativeVertical(nmea, "PFLAU", 8);
 TinyGPSCustom S_RelativeDistance(nmea, "PFLAU", 9);
 TinyGPSCustom S_ID              (nmea, "PFLAU", 10);
-/* SoftRF/S7xG PFLAU NMEA sentence extension(s) */
-TinyGPSCustom S_Addr            (nmea, "PFLAU", 11);
-TinyGPSCustom S_Protocol        (nmea, "PFLAU", 12);
-TinyGPSCustom S_RxCnt           (nmea, "PFLAU", 13);
-TinyGPSCustom S_TxCnt           (nmea, "PFLAU", 14);
+
+TinyGPSCustom H_Addr            (nmea, "PSRFH", 1);
+TinyGPSCustom H_Protocol        (nmea, "PSRFH", 2);
+TinyGPSCustom H_RxCnt           (nmea, "PSRFH", 3);
+TinyGPSCustom H_TxCnt           (nmea, "PSRFH", 4);
+
+#if !defined(USE_NMEA_CFG)
+
+TinyGPSCustom C_Version         (nmea, "PSRFC", 1);
+TinyGPSCustom C_Mode            (nmea, "PSRFC", 2);
+TinyGPSCustom C_Protocol        (nmea, "PSRFC", 3);
+TinyGPSCustom C_Band            (nmea, "PSRFC", 4);
+TinyGPSCustom C_AcftType        (nmea, "PSRFC", 5);
+TinyGPSCustom C_Alarm           (nmea, "PSRFC", 6);
+TinyGPSCustom C_TxPower         (nmea, "PSRFC", 7);
+TinyGPSCustom C_Volume          (nmea, "PSRFC", 8);
+TinyGPSCustom C_Pointer         (nmea, "PSRFC", 9);
+TinyGPSCustom C_NMEA_gnss       (nmea, "PSRFC", 10);
+TinyGPSCustom C_NMEA_private    (nmea, "PSRFC", 11);
+TinyGPSCustom C_NMEA_legacy     (nmea, "PSRFC", 12);
+TinyGPSCustom C_NMEA_sensors    (nmea, "PSRFC", 13);
+TinyGPSCustom C_NMEA_Output     (nmea, "PSRFC", 14);
+TinyGPSCustom C_GDL90_Output    (nmea, "PSRFC", 15);
+TinyGPSCustom C_D1090_Output    (nmea, "PSRFC", 16);
+TinyGPSCustom C_Stealth         (nmea, "PSRFC", 17);
+TinyGPSCustom C_noTrack         (nmea, "PSRFC", 18);
+TinyGPSCustom C_PowerSave       (nmea, "PSRFC", 19);
+
+#endif /* USE_NMEA_CFG */
 
 status_t NMEA_Status;
 
@@ -115,7 +140,7 @@ static void NMEA_Parse_Character(char c)
             (NMEABuffer[ndx+1] == 'G' || NMEABuffer[ndx+1] == 'P')) {
 
           size_t write_size = NMEA_cnt - ndx + 1;
-          NMEA_Out((byte *) &NMEABuffer[ndx], write_size, true);
+          NMEA_Out(settings->m.data_dest, (byte *) &NMEABuffer[ndx], write_size, true);
           break;
         }
       }
@@ -247,23 +272,147 @@ static void NMEA_Parse_Character(char c)
           NMEA_Status.ID = strtol(S_ID.value(), NULL, 16);
         }
 
-        /* SoftRF/S7xG PFLAU NMEA sentence extension(s) */
-        if (S_Addr.isUpdated())
+      } else if (H_Addr.isUpdated()) {
+
+        ThisDevice.addr = strtol(H_Addr.value(), NULL, 16);
+
+        if (H_Protocol.isUpdated())
         {
-          ThisDevice.addr = strtol(S_Addr.value(), NULL, 16);
+          ThisDevice.protocol = atoi(H_Protocol.value());
         }
-        if (S_Protocol.isUpdated())
+        if (H_RxCnt.isUpdated())
         {
-          ThisDevice.protocol = atoi(S_Protocol.value());
+          rx_packets_counter = strtol(H_RxCnt.value(), NULL, 10);
         }
-        if (S_RxCnt.isUpdated())
+        if (H_TxCnt.isUpdated())
         {
-          rx_packets_counter = strtol(S_RxCnt.value(), NULL, 10);
+          tx_packets_counter = strtol(H_TxCnt.value(), NULL, 10);
         }
-        if (S_TxCnt.isUpdated())
-        {
-          tx_packets_counter = strtol(S_TxCnt.value(), NULL, 10);
+
+#if !defined(USE_NMEA_CFG)
+      } else if (C_Version.isUpdated()) {
+        if (atoi(C_Version.value()) == PSRFC_VERSION) {
+          bool cfg_is_updated = false;
+
+          if (C_Mode.isUpdated())
+          {
+            settings->s.mode = atoi(C_Mode.value());
+//            Serial.print(F("Mode = ")); Serial.println(settings->s.mode);
+            cfg_is_updated = true;
+          }
+          if (C_Protocol.isUpdated())
+          {
+            settings->s.rf_protocol = atoi(C_Protocol.value());
+//            Serial.print(F("Protocol = ")); Serial.println(settings->s.rf_protocol);
+            cfg_is_updated = true;
+          }
+          if (C_Band.isUpdated())
+          {
+            settings->s.band = atoi(C_Band.value());
+//            Serial.print(F("Region = ")); Serial.println(settings->s.band);
+            cfg_is_updated = true;
+          }
+          if (C_AcftType.isUpdated())
+          {
+            settings->s.aircraft_type = atoi(C_AcftType.value());
+//            Serial.print(F("AcftType = ")); Serial.println(settings->s.aircraft_type);
+            cfg_is_updated = true;
+          }
+          if (C_Alarm.isUpdated())
+          {
+            settings->s.alarm = atoi(C_Alarm.value());
+//            Serial.print(F("Alarm = ")); Serial.println(settings->s.alarm);
+            cfg_is_updated = true;
+          }
+          if (C_TxPower.isUpdated())
+          {
+            settings->s.txpower = atoi(C_TxPower.value());
+//            Serial.print(F("TxPower = ")); Serial.println(settings->s.txpower);
+            cfg_is_updated = true;
+          }
+          if (C_Volume.isUpdated())
+          {
+            settings->s.volume = atoi(C_Volume.value());
+//            Serial.print(F("Volume = ")); Serial.println(settings->s.volume);
+            cfg_is_updated = true;
+          }
+           if (C_Pointer.isUpdated())
+          {
+            settings->s.pointer = atoi(C_Pointer.value());
+//            Serial.print(F("Pointer = ")); Serial.println(settings->s.pointer);
+            cfg_is_updated = true;
+          }
+          if (C_NMEA_gnss.isUpdated())
+          {
+            settings->s.nmea_g = atoi(C_NMEA_gnss.value());
+//            Serial.print(F("NMEA_gnss = ")); Serial.println(settings->s.nmea_g);
+            cfg_is_updated = true;
+          }
+          if (C_NMEA_private.isUpdated())
+          {
+            settings->s.nmea_p = atoi(C_NMEA_private.value());
+//            Serial.print(F("NMEA_private = ")); Serial.println(settings->s.nmea_p);
+            cfg_is_updated = true;
+          }
+          if (C_NMEA_legacy.isUpdated())
+          {
+            settings->s.nmea_l = atoi(C_NMEA_legacy.value());
+//            Serial.print(F("NMEA_legacy = ")); Serial.println(settings->s.nmea_l);
+            cfg_is_updated = true;
+          }
+           if (C_NMEA_sensors.isUpdated())
+          {
+            settings->s.nmea_s = atoi(C_NMEA_sensors.value());
+//            Serial.print(F("NMEA_sensors = ")); Serial.println(settings->s.nmea_s);
+            cfg_is_updated = true;
+          }
+          if (C_NMEA_Output.isUpdated())
+          {
+            settings->s.nmea_out = atoi(C_NMEA_Output.value());
+//            Serial.print(F("NMEA_Output = ")); Serial.println(settings->s.nmea_out);
+            cfg_is_updated = true;
+          }
+          if (C_GDL90_Output.isUpdated())
+          {
+            settings->s.gdl90 = atoi(C_GDL90_Output.value());
+//            Serial.print(F("GDL90_Output = ")); Serial.println(settings->s.gdl90);
+            cfg_is_updated = true;
+          }
+          if (C_D1090_Output.isUpdated())
+          {
+            settings->s.d1090 = atoi(C_D1090_Output.value());
+//            Serial.print(F("D1090_Output = ")); Serial.println(settings->s.d1090);
+            cfg_is_updated = true;
+          }
+          if (C_Stealth.isUpdated())
+          {
+            settings->s.stealth = atoi(C_Stealth.value());
+//            Serial.print(F("Stealth = ")); Serial.println(settings->s.stealth);
+            cfg_is_updated = true;
+          }
+          if (C_noTrack.isUpdated())
+          {
+            settings->s.no_track = atoi(C_noTrack.value());
+//            Serial.print(F("noTrack = ")); Serial.println(settings->s.no_track);
+            cfg_is_updated = true;
+          }
+          if (C_PowerSave.isUpdated())
+          {
+            settings->s.power_save = atoi(C_PowerSave.value());
+//            Serial.print(F("PowerSave = ")); Serial.println(settings->s.power_save);
+            cfg_is_updated = true;
+          }
+
+          if (cfg_is_updated) {
+#if 0
+            SoC->WDT_fini();
+            if (SoC->Bluetooth_ops) { SoC->Bluetooth_ops->fini(); }
+            EEPROM_store();
+            nmea_cfg_restart();
+#endif
+          }
         }
+#endif /* USE_NMEA_CFG */
       }
     }
 
@@ -312,10 +461,21 @@ void NMEA_setup()
       SoC->swSer_begin(SerialBaud);
       break;
     case CON_BLUETOOTH:
-      if (SoC->Bluetooth) {
-        SoC->Bluetooth->setup();
+#if 0
+      if (SoC->Bluetooth_ops) {
+        SoC->Bluetooth_ops->setup();
       }
+#endif
       break;
+#if defined(CONFIG_IDF_TARGET_ESP32S2)
+    case CON_USB:
+#if 0
+      if (SoC->USB_ops) {
+        SoC->USB_ops->setup();
+      }
+#endif
+      break;
+#endif /* CONFIG_IDF_TARGET_ESP32S2 */
     case CON_NONE:
     case CON_WIFI_UDP:
     default:
@@ -323,7 +483,7 @@ void NMEA_setup()
     }
 
 #if defined(NMEA_TCP_SERVICE)
-    if (settings->s.nmea_out == NMEA_TCP) {
+    if (settings->m.data_dest == NMEA_TCP) {
       NmeaTCPServer.begin();
       Serial.print(F("NMEA TCP server has started at port: "));
       Serial.println(NMEA_TCP_PORT);
@@ -361,6 +521,21 @@ void NMEA_loop()
       NMEA_TimeMarker = millis();
     }
     break;
+  case CON_USB:
+    /* read data from Type-C USB port in Host mode */
+    if (SoC->USB_ops) {
+      while (SoC->USB_ops->available() > 0) {
+        c = SoC->USB_ops->read();
+#if defined(ENABLE_USB_HOST_DEBUG)
+        if (hw_info.gnss == GNSS_MODULE_NONE) {
+          Serial.print(c);
+        }
+#endif
+        NMEA_Parse_Character(c);
+        NMEA_TimeMarker = millis();
+      }
+    }
+    break;
   case CON_WIFI_UDP:
     size = SoC->WiFi_Receive_UDP((uint8_t *) UDPpacketBuffer, sizeof(UDPpacketBuffer));
     if (size > 0) {
@@ -372,9 +547,9 @@ void NMEA_loop()
     }
     break;
   case CON_BLUETOOTH:
-    if (SoC->Bluetooth) {
-      while (SoC->Bluetooth->available() > 0) {
-        c = SoC->Bluetooth->read();
+    if (SoC->Bluetooth_ops) {
+      while (SoC->Bluetooth_ops->available() > 0) {
+        c = SoC->Bluetooth_ops->read();
         Serial.print(c);
         NMEA_Parse_Character(c);
         NMEA_TimeMarker = millis();
@@ -397,7 +572,7 @@ void NMEA_loop()
 
     NMEA_add_checksum(PGRMZBuffer, sizeof(PGRMZBuffer) - strlen(PGRMZBuffer));
 
-    NMEA_Out((byte *) PGRMZBuffer, strlen(PGRMZBuffer), false);
+    NMEA_Out(settings->m.data_dest, (byte *) PGRMZBuffer, strlen(PGRMZBuffer), false);
 
     PGRMZ_TimeMarker = millis();
   }
@@ -420,7 +595,7 @@ void NMEA_loop()
 #if defined(NMEA_TCP_SERVICE)
   uint8_t i;
 
-  if (settings->s.nmea_out == NMEA_TCP) {
+  if (settings->m.data_dest == NMEA_TCP) {
 
     if (NmeaTCPServer.hasClient()) {
       for(i = 0; i < MAX_NMEATCP_CLIENTS; i++) {
@@ -462,20 +637,52 @@ void NMEA_loop()
 #endif
 }
 
+bool NMEA_Request_Settings()
+{
+    const char *msg = "$PSRFC,?*47\r\n";
+
+    if (hw_info.model == SOFTRF_MODEL_WEBTOP_USB &&
+        settings->m.connection == CON_USB) {
+      if (SoC->USB_ops) {
+        SoC->USB_ops->write((byte *) msg, strlen(msg));
+      }
+    } else {
+      SerialInput.write(msg);
+    }
+
+    return true;
+}
+
 bool NMEA_Save_Settings()
 {
+    int nmea_out = NMEA_UART;
+
+    if (hw_info.model == SOFTRF_MODEL_WEBTOP_USB &&
+        settings->m.connection == CON_USB) {
+      nmea_out = NMEA_USB;
+    }
+
     snprintf_P(NMEABuffer, sizeof(NMEABuffer),
             PSTR("$PSRFC,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d*"),
             PSRFC_VERSION, settings->s.mode, settings->s.rf_protocol,
             settings->s.band, settings->s.aircraft_type, settings->s.alarm,
             settings->s.txpower, BUZZER_OFF, LED_OFF,
             settings->s.nmea_g, settings->s.nmea_p, settings->s.nmea_l,
-            settings->s.nmea_s, NMEA_UART, GDL90_OFF, D1090_OFF,
+            settings->s.nmea_s, nmea_out, GDL90_OFF, D1090_OFF,
             settings->s.stealth, settings->s.no_track, settings->s.power_save );
 
     NMEA_add_checksum(NMEABuffer, sizeof(NMEABuffer) - strlen(NMEABuffer));
 
-    SerialInput.write((byte *) NMEABuffer, strlen(NMEABuffer));
+    if (hw_info.model == SOFTRF_MODEL_WEBTOP_USB &&
+        settings->m.connection == CON_USB) {
+      if (SoC->USB_ops) {
+        SoC->USB_ops->write((byte *) NMEABuffer, strlen(NMEABuffer));
+      }
+    } else {
+      SerialInput.write((byte *) NMEABuffer, strlen(NMEABuffer));
+    }
+
+    return true;
 }
 
 bool NMEA_isConnected()
@@ -501,11 +708,12 @@ bool NMEA_has3DFix()
           NMEA_Status.GPS == GNSS_STATUS_3D_MOVING);
 }
 
-void NMEA_Out(byte *buf, size_t size, bool nl)
+void NMEA_Out(uint8_t dest, byte *buf, size_t size, bool nl)
 {
-  switch(settings->s.nmea_out)
+  switch (dest)
   {
   case NMEA_UART:
+  case NMEA_USB:
     {
       Serial.write(buf, size);
       if (nl)
@@ -544,10 +752,10 @@ void NMEA_Out(byte *buf, size_t size, bool nl)
     break;
   case NMEA_BLUETOOTH:
     {
-      if (SoC->Bluetooth) {
-        SoC->Bluetooth->write(buf, size);
+      if (SoC->Bluetooth_ops) {
+        SoC->Bluetooth_ops->write(buf, size);
         if (nl)
-          SoC->Bluetooth->write((byte *) "\n", 1);
+          SoC->Bluetooth_ops->write((byte *) "\n", 1);
       }
     }
     break;
@@ -560,7 +768,7 @@ void NMEA_Out(byte *buf, size_t size, bool nl)
 void NMEA_fini()
 {
 #if defined(NMEA_TCP_SERVICE)
-  if (settings->s.nmea_out == NMEA_TCP) {
+  if (settings->m.data_dest == NMEA_TCP) {
     NmeaTCPServer.stop();
   }
 #endif /* NMEA_TCP_SERVICE */

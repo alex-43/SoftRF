@@ -1,6 +1,6 @@
 /*
  * View_Radar_TFT.cpp
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -288,7 +288,7 @@ void TFT_radar_loop()
 
   if (hasData) {
 
-    bool hasFix = settings->m.protocol == PROTOCOL_NMEA  ? isValidGNSSFix()   :
+    bool hasFix = settings->m.protocol == PROTOCOL_NMEA  ? isValidNMEAFix()   :
                   settings->m.protocol == PROTOCOL_GDL90 ? GDL90_hasOwnShip() :
                   false;
 

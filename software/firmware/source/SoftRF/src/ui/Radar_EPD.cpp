@@ -1,6 +1,6 @@
 /*
  * View_Radar_EPD.cpp
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,6 +29,7 @@
 #include "../protocol/data/NMEA.h"
 #include "../protocol/data/GDL90.h"
 #include "../driver/LED.h"
+#include "../driver/RF.h"
 
 #include <Fonts/FreeMono9pt7b.h>
 #include <Fonts/FreeMonoBold9pt7b.h>
@@ -55,8 +56,12 @@ static void EPD_Draw_Radar()
   uint16_t y;
   char cog_text[6];
 
-  if (!EPD_ready_to_display) {
-
+#if defined(USE_EPD_TASK)
+  if (EPD_update_in_progress == EPD_UPDATE_NONE) {
+//  if (SoC->Display_lock()) {
+#else
+  {
+#endif
     /* divider is a half of full scale */
     int32_t divider = 2000;
 
@@ -75,7 +80,7 @@ static void EPD_Draw_Radar()
       switch(EPD_zoom)
       {
       case ZOOM_LOWEST:
-        divider = 10000; /* 20 KM */
+        divider = 30000; /* 60 KM */
         break;
       case ZOOM_LOW:
         divider =  5000; /* 10 KM */
@@ -92,7 +97,7 @@ static void EPD_Draw_Radar()
       switch(EPD_zoom)
       {
       case ZOOM_LOWEST:
-        divider = 9260;  /* 10 NM */
+        divider = 27780;  /* 30 NM */
         break;
       case ZOOM_LOW:
         divider = 4630;  /*  5 NM */
@@ -199,27 +204,35 @@ static void EPD_Draw_Radar()
       display->drawCircle(  radar_center_x, radar_center_y,
                             radius / 2, GxEPD_BLACK);
 
-#if 0
-      /* arrow tip */
-      display->fillTriangle(radar_center_x - 7, radar_center_y + 5,
-                            radar_center_x    , radar_center_y - 5,
-                            radar_center_x + 7, radar_center_y + 5,
-                            GxEPD_BLACK);
-      display->fillTriangle(radar_center_x - 7, radar_center_y + 5,
-                            radar_center_x    , radar_center_y + 2,
-                            radar_center_x + 7, radar_center_y + 5,
-                            GxEPD_WHITE);
-#else
-      /* little airplane */
-      display->drawFastVLine(radar_center_x,      radar_center_y - 4, 14, GxEPD_BLACK);
-      display->drawFastVLine(radar_center_x + 1,  radar_center_y - 4, 14, GxEPD_BLACK);
+      if (ThisAircraft.aircraft_type == AIRCRAFT_TYPE_GLIDER     ||
+          ThisAircraft.aircraft_type == AIRCRAFT_TYPE_TOWPLANE   ||
+          ThisAircraft.aircraft_type == AIRCRAFT_TYPE_HELICOPTER ||
+          ThisAircraft.aircraft_type == AIRCRAFT_TYPE_DROPPLANE  ||
+          ThisAircraft.aircraft_type == AIRCRAFT_TYPE_POWERED    ||
+          ThisAircraft.aircraft_type == AIRCRAFT_TYPE_JET) {
 
-      display->drawFastHLine(radar_center_x - 8,  radar_center_y,     18, GxEPD_BLACK);
-      display->drawFastHLine(radar_center_x - 10, radar_center_y + 1, 22, GxEPD_BLACK);
+        /* little airplane */
+        display->drawFastVLine(radar_center_x,      radar_center_y - 4, 14, GxEPD_BLACK);
+        display->drawFastVLine(radar_center_x + 1,  radar_center_y - 4, 14, GxEPD_BLACK);
 
-      display->drawFastHLine(radar_center_x - 3,  radar_center_y + 8,  8, GxEPD_BLACK);
-      display->drawFastHLine(radar_center_x - 2,  radar_center_y + 9,  6, GxEPD_BLACK);
-#endif
+        display->drawFastHLine(radar_center_x - 8,  radar_center_y,     18, GxEPD_BLACK);
+        display->drawFastHLine(radar_center_x - 10, radar_center_y + 1, 22, GxEPD_BLACK);
+
+        display->drawFastHLine(radar_center_x - 3,  radar_center_y + 8,  8, GxEPD_BLACK);
+        display->drawFastHLine(radar_center_x - 2,  radar_center_y + 9,  6, GxEPD_BLACK);
+
+      } else {
+
+        /* arrow tip */
+        display->fillTriangle(radar_center_x - 7, radar_center_y + 5,
+                              radar_center_x    , radar_center_y - 5,
+                              radar_center_x + 7, radar_center_y + 5,
+                              GxEPD_BLACK);
+        display->fillTriangle(radar_center_x - 7, radar_center_y + 5,
+                              radar_center_x    , radar_center_y + 2,
+                              radar_center_x + 7, radar_center_y + 5,
+                              GxEPD_WHITE);
+      }
 
       switch (ui->orientation)
       {
@@ -295,12 +308,12 @@ static void EPD_Draw_Radar()
       display->setCursor(x, y);
 
       if (ui->units == UNITS_METRIC || ui->units == UNITS_MIXED) {
-        display->print(EPD_zoom == ZOOM_LOWEST ? "20" :
+        display->print(EPD_zoom == ZOOM_LOWEST ? "60" :
                        EPD_zoom == ZOOM_LOW    ? "10" :
                        EPD_zoom == ZOOM_MEDIUM ? "4 " :
                        EPD_zoom == ZOOM_HIGH   ? "2 " : "");
       } else {
-        display->print(EPD_zoom == ZOOM_LOWEST ? "10" :
+        display->print(EPD_zoom == ZOOM_LOWEST ? "30" :
                        EPD_zoom == ZOOM_LOW    ? "5 " :
                        EPD_zoom == ZOOM_MEDIUM ? "2 " :
                        EPD_zoom == ZOOM_HIGH   ? "1 " : "");
@@ -316,8 +329,14 @@ static void EPD_Draw_Radar()
                      "KM" : "NM");
     }
 
+#if defined(USE_EPD_TASK)
     /* a signal to background EPD update task */
-    EPD_ready_to_display = true;
+    EPD_update_in_progress = EPD_UPDATE_FAST;
+//    SoC->Display_unlock();
+//    yield();
+#else
+    display->display(true);
+#endif
   }
 }
 
@@ -328,33 +347,16 @@ void EPD_radar_setup()
 
 void EPD_radar_loop()
 {
-  bool hasFix = isValidGNSSFix();
+  if (isTimeToEPD()) {
+    bool hasFix = isValidGNSSFix() || (settings->mode == SOFTRF_MODE_TXRX_TEST);
 
-  if (hasFix) {
-    view_state_curr = STATE_RVIEW_RADAR;
-  } else {
-    view_state_curr = STATE_RVIEW_NOFIX;
-  }
-
-  if (EPD_vmode_updated) {
-    EPD_Clear_Screen();
-    view_state_prev = STATE_RVIEW_NONE;
-    EPD_vmode_updated = false;
-  }
-
-  if (view_state_curr != view_state_prev &&
-      view_state_curr == STATE_RVIEW_NOFIX) {
-
-    EPD_Message(NO_FIX_TEXT, NULL);
-    view_state_prev = view_state_curr;
-  }
-
-  if (view_state_curr == STATE_RVIEW_RADAR) {
-    if (view_state_curr != view_state_prev) {
-//       EPD_Clear_Screen();
-       view_state_prev = view_state_curr;
+    if (hasFix) {
+      EPD_Draw_Radar();
+    } else {
+      EPD_Message(NO_FIX_TEXT, NULL);
     }
-    EPD_Draw_Radar();
+
+    EPDTimeMarker = millis();
   }
 }
 

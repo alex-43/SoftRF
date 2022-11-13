@@ -3,7 +3,7 @@
  * Copyright (C) 2014-2015 Stanislaw Pusep
  *
  * Protocol_Legacy, encoder for legacy radio protocol
- * Copyright (C) 2016-2021 Linar Yusupov
+ * Copyright (C) 2016-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,8 +48,41 @@ const rf_proto_desc_t legacy_proto_desc = {
   .whitening       = RF_WHITENING_MANCHESTER,
   .bandwidth       = RF_RX_BANDWIDTH_SS_125KHZ,
 
-  .tx_interval_min  = LEGACY_TX_INTERVAL_MIN,
-  .tx_interval_max  = LEGACY_TX_INTERVAL_MAX
+  .air_time        = LEGACY_AIR_TIME,
+
+#if defined(USE_TIME_SLOTS)
+  .tm_type         = RF_TIMING_2SLOTS_PPS_SYNC,
+#else
+  .tm_type         = RF_TIMING_INTERVAL,
+#endif
+  .tx_interval_min = LEGACY_TX_INTERVAL_MIN,
+  .tx_interval_max = LEGACY_TX_INTERVAL_MAX,
+  .slot0           = {400,  800},
+  .slot1           = {800, 1200}
+};
+
+/*
+ * FTD-014. Speed threshold in m/sec.
+ * The aircraft is treated as on ground if its horizontal
+ * velocity is below this value.
+ */
+static const uint8_t legacy_GS_threshold[] PROGMEM = {
+        0,  /* OTHER      */
+        2,  /* GLIDER     */
+        10, /* TOWPLANE   */
+        2,  /* HELICOPTER */
+        5,  /* PARACHUTE  */
+        10, /* DROPPLANE  */
+        2,  /* HANGGLIDER */
+        2,  /* PARAGLIDER */
+        10, /* POWERED    */
+        10, /* JET        */
+        0,  /* UFO        */
+        0,  /* BALLOON    */
+        0,  /* ZEPPELIN   */
+        2,  /* UAV        */
+        0,  /* RESERVED   */
+        0   /* STATIC     */
 };
 
 /* http://en.wikipedia.org/wiki/XXTEA */
@@ -199,9 +232,12 @@ size_t legacy_encode(void *legacy_pkt, ufo_t *this_aircraft) {
     uint32_t key[4];
 
     uint32_t id = this_aircraft->addr;
-    float lat = this_aircraft->latitude;
-    float lon = this_aircraft->longitude;
-    int16_t alt = (int16_t) (this_aircraft->altitude + this_aircraft->geoid_separation);
+    uint8_t acft_type = this_aircraft->aircraft_type > AIRCRAFT_TYPE_STATIC ?
+            AIRCRAFT_TYPE_UNKNOWN : this_aircraft->aircraft_type;
+
+    int32_t lat = (int32_t) (this_aircraft->latitude  * 1e7);
+    int32_t lon = (int32_t) (this_aircraft->longitude * 1e7);
+    int16_t alt = (int16_t) (this_aircraft->altitude  + this_aircraft->geoid_separation);
     uint32_t timestamp = (uint32_t) this_aircraft->timestamp;
 
     float course = this_aircraft->course;
@@ -229,7 +265,7 @@ size_t legacy_encode(void *legacy_pkt, ufo_t *this_aircraft) {
     int8_t ew = (int8_t) (speed * sinf(radians(course)));
 
     int16_t vs10 = (int16_t) roundf(vsf * 10.0f);
-    pkt->vs = vs10 >> pkt->smult;
+    pkt->vs = this_aircraft->stealth ? 0 : vs10 >> pkt->smult;
 
     pkt->addr = id & 0x00FFFFFF;
 
@@ -242,18 +278,20 @@ size_t legacy_encode(void *legacy_pkt, ufo_t *this_aircraft) {
 
     pkt->parity = 0;
 
-    pkt->stealth = this_aircraft->stealth;
+    pkt->stealth  = this_aircraft->stealth;
     pkt->no_track = this_aircraft->no_track;
 
-    pkt->aircraft_type = this_aircraft->aircraft_type;
+    pkt->aircraft_type = acft_type;
 
     pkt->gps = 323;
 
-    pkt->lat = (uint32_t ( lat * 1e7) >> 7) & 0x7FFFF;
-    pkt->lon = (uint32_t ( lon * 1e7) >> 7) & 0xFFFFF;
-    pkt->alt = alt;
+    pkt->lat = ((lat >> 7) + (lat & 0x40 ? (lat < 0 ? -1 : 1) : 0)) & 0x7FFFF;
+    pkt->lon = ((lon >> 7) + (lon & 0x40 ? (lon < 0 ? -1 : 1) : 0)) & 0xFFFFF;
 
-    pkt->airborne = speed > 0 ? 1 : 0;
+    pkt->alt = alt < 0 ? 0 : alt;
+
+    pkt->airborne = ((int) speedf) >= legacy_GS_threshold[acft_type] ? 1 : 0;
+
     pkt->ns[0] = ns; pkt->ns[1] = ns; pkt->ns[2] = ns; pkt->ns[3] = ns;
     pkt->ew[0] = ew; pkt->ew[1] = ew; pkt->ew[2] = ew; pkt->ew[3] = ew;
 

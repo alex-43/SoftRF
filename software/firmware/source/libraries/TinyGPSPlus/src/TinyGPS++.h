@@ -24,13 +24,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #ifndef __TinyGPSPlus_h
 #define __TinyGPSPlus_h
 
-#if defined(ARDUINO) && ARDUINO >= 100 && !defined(RASPBERRY_PI)
+#if (defined(ARDUINO) && ARDUINO >= 100 && !defined(RASPBERRY_PI)) || \
+    defined(HACKRF_ONE)
 #include "Arduino.h"
 #else
-#if !defined(RASPBERRY_PI)
-#include "WProgram.h"
-#else
+#if defined(RASPBERRY_PI)
 #include <raspi/raspi.h>
+#else
+#include "WProgram.h"
 #endif /* RASPBERRY_PI */
 #endif
 #include <limits.h>
@@ -42,7 +43,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #define _GPS_MILES_PER_METER 0.00062137112
 #define _GPS_KM_PER_METER 0.001
 #define _GPS_FEET_PER_METER 3.2808399
+#if !defined(ARDUINO_ARCH_AVR) && !defined(ENERGIA_ARCH_CC13XX)
+#define _GPS_MAX_FIELD_SIZE 33
+#else
 #define _GPS_MAX_FIELD_SIZE 15
+#endif
 
 struct RawDegrees
 {

@@ -1,6 +1,6 @@
 /*
  * GDL90Helper.cpp
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  *
  * This program is free software: you can redistribute it and/or modify
@@ -94,6 +94,8 @@ static void GDL90_Parse_Character(char c)
           buf[i] = gdl90_ringbuf[(gdl90buf_tail + i) % GDL90_RINGBUF_SIZE];
       }
 
+      GDL90_Out(buf, msg_size);
+
       if (decode_gdl90_heartbeat(&message, &heartbeat)) {
 
 //      print_gdl90_heartbeat(&heartbeat);
@@ -113,6 +115,8 @@ static void GDL90_Parse_Character(char c)
           buf[i] = gdl90_ringbuf[(gdl90buf_tail + i) % GDL90_RINGBUF_SIZE];
       }
 
+      GDL90_Out(buf, msg_size);
+
       decode_gdl90_ownship_geo_altitude(&message, &geo_altitude);
 //    print_gdl90_ownship_geo_altitude(&geo_altitude);
     }
@@ -127,6 +131,8 @@ static void GDL90_Parse_Character(char c)
       for (uint8_t i=0; i < msg_size; i++) {
           buf[i] = gdl90_ringbuf[(gdl90buf_tail + i) % GDL90_RINGBUF_SIZE];
       }
+
+      GDL90_Out(buf, msg_size);
 
       if (decode_gdl90_traffic_report(&message, &gdl_traffic)) {
 
@@ -181,6 +187,8 @@ static void GDL90_Parse_Character(char c)
       for (uint8_t i=0; i < msg_size; i++) {
           buf[i] = gdl90_ringbuf[(gdl90buf_tail + i) % GDL90_RINGBUF_SIZE];
       }
+
+      GDL90_Out(buf, msg_size);
 
       if (decode_gdl90_traffic_report(&message, &ownship)) {
 
@@ -252,10 +260,13 @@ void GDL90_setup()
       SoC->swSer_begin(SerialBaud);
       break;
     case CON_BLUETOOTH:
-      if (SoC->Bluetooth) {
-        SoC->Bluetooth->setup();
+#if 0
+      if (SoC->Bluetooth_ops) {
+        SoC->Bluetooth_ops->setup();
       }
+#endif
       break;
+    case CON_USB:
     case CON_NONE:
     case CON_WIFI_UDP:
     default:
@@ -281,12 +292,23 @@ void GDL90_loop()
     }
     break;
   case CON_SERIAL_AUX:
-    /* read data from microUSB port */
+    /* read data from Type-C USB port */
     while (Serial.available() > 0) {
       char c = Serial.read();
 //        Serial.print(c);
       GDL90_Parse_Character(c);
       GDL90_Data_TimeMarker = millis();
+    }
+    break;
+  case CON_USB:
+    /* read data from Type-C USB port in Host mode */
+    if (SoC->USB_ops) {
+      while (SoC->USB_ops->available() > 0) {
+        char c = SoC->USB_ops->read();
+//        Serial.print(c);
+        GDL90_Parse_Character(c);
+        GDL90_Data_TimeMarker = millis();
+      }
     }
     break;
   case CON_WIFI_UDP:
@@ -300,9 +322,9 @@ void GDL90_loop()
     }
     break;
   case CON_BLUETOOTH:
-    if (SoC->Bluetooth) {
-      while (SoC->Bluetooth->available() > 0) {
-        char c = SoC->Bluetooth->read();
+    if (SoC->Bluetooth_ops) {
+      while (SoC->Bluetooth_ops->available() > 0) {
+        char c = SoC->Bluetooth_ops->read();
 //        Serial.print(c);
         GDL90_Parse_Character(c);
         GDL90_Data_TimeMarker = millis();
@@ -331,4 +353,33 @@ bool GDL90_hasOwnShip()
 {
   return (GDL90_OwnShip_TimeMarker > GDL90_EXP_TIME &&
          (millis() - GDL90_OwnShip_TimeMarker) < GDL90_EXP_TIME);
+}
+
+void GDL90_Out(byte *buf, size_t size)
+{
+  if (size > 0) {
+    switch(settings->m.data_dest)
+    {
+    case GDL90_UART:
+    case GDL90_USB:
+      Serial.write(buf, size);
+      break;
+    case GDL90_UDP:
+      {
+        SoC->WiFi_transmit_UDP(GDL90_DST_PORT, buf, size);
+      }
+      break;
+    case GDL90_BLUETOOTH:
+      {
+        if (SoC->Bluetooth_ops) {
+          SoC->Bluetooth_ops->write(buf, size);
+        }
+      }
+      break;
+    case GDL90_TCP:
+    case GDL90_OFF:
+    default:
+      break;
+    }
+  }
 }

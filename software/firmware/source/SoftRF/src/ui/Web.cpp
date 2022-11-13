@@ -1,6 +1,6 @@
 /*
  * WebHelper.cpp
- * Copyright (C) 2016-2021 Linar Yusupov
+ * Copyright (C) 2016-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,6 +37,7 @@ void Web_fini()     {}
 #include "../protocol/data/NMEA.h"
 #include "../protocol/data/GDL90.h"
 #include "../protocol/data/D1090.h"
+#include "../system/Time.h"
 
 #if defined(ENABLE_AHRS)
 #include "../driver/AHRS.h"
@@ -78,7 +79,7 @@ static const char about_html[] PROGMEM = "<html>\
   </head>\
 <body>\
 <h1 align=center>About</h1>\
-<p>This firmware is a part of open SoftRF project</p>\
+<p>This firmware is a part of SoftRF project</p>\
 <p>URL: http://github.com/lyusupov/SoftRF</p>\
 <p>Author: <b>Linar Yusupov</b></p>\
 <p>E-mail: linar.r.yusupov@gmail.com</p>\
@@ -116,18 +117,18 @@ static const char about_html[] PROGMEM = "<html>\
 <tr><th align=left>Robert Wessels and Tony Cave</th><td align=left>EasyLink library</td></tr>\
 <tr><th align=left>Oliver Jowett</th><td align=left>Dump978 library</td></tr>\
 <tr><th align=left>Phil Karn</th><td align=left>FEC library</td></tr>\
-<tr><th align=left>Lewis He</th><td align=left>AXP20X library</td></tr>\
+<tr><th align=left>Lewis He</th><td align=left>AXP20X, XPowersLib and SensorsLib libraries</td></tr>\
 <tr><th align=left>Bodmer</th><td align=left>TFT library</td></tr>\
 <tr><th align=left>Michael Kuyper</th><td align=left>Basic MAC library</td></tr>\
 </table>\
 <hr>\
-Copyright (C) 2015-2021 &nbsp;&nbsp;&nbsp; Linar Yusupov\
+Copyright (C) 2015-2022 &nbsp;&nbsp;&nbsp; Linar Yusupov\
 </body>\
 </html>";
 
 void handleSettings() {
 
-  size_t size = 5020;
+  size_t size = 5300;
   char *offset;
   size_t len = 0;
   char *Settings_temp = (char *) malloc(size);
@@ -350,6 +351,27 @@ void handleSettings() {
     len = strlen(offset);
     offset += len;
     size -= len;
+
+  } else if (SoC->id == SOC_ESP32S3) {
+
+    snprintf_P ( offset, size,
+      PSTR("\
+<tr>\
+<th align=left>Built-in Bluetooth</th>\
+<td align=right>\
+<select name='bluetooth'>\
+<option %s value='%d'>Off</option>\
+<option %s value='%d'>LE</option>\
+</select>\
+</td>\
+</tr>"),
+    (settings->bluetooth == BLUETOOTH_OFF ? "selected" : ""), BLUETOOTH_OFF,
+    (settings->bluetooth == BLUETOOTH_LE_HM10_SERIAL ? "selected" : ""), BLUETOOTH_LE_HM10_SERIAL
+    );
+
+    len = strlen(offset);
+    offset += len;
+    size -= len;
   }
 
   /* Common part 3 */
@@ -397,22 +419,31 @@ void handleSettings() {
   (!settings->nmea_p ? "checked" : "") , (settings->nmea_p ? "checked" : ""),
   (!settings->nmea_l ? "checked" : "") , (settings->nmea_l ? "checked" : ""),
   (!settings->nmea_s ? "checked" : "") , (settings->nmea_s ? "checked" : ""),
-  (settings->nmea_out == NMEA_OFF ? "selected" : ""), NMEA_OFF,
+  (settings->nmea_out == NMEA_OFF  ? "selected" : ""), NMEA_OFF,
   (settings->nmea_out == NMEA_UART ? "selected" : ""), NMEA_UART,
-  (settings->nmea_out == NMEA_UDP ? "selected" : ""), NMEA_UDP);
+  (settings->nmea_out == NMEA_UDP  ? "selected" : ""), NMEA_UDP);
 
   len = strlen(offset);
   offset += len;
   size -= len;
 
   /* SoC specific part 2 */
-  if (SoC->id == SOC_ESP32) {
+  if (SoC->id == SOC_ESP32 || SoC->id == SOC_ESP32S3) {
     snprintf_P ( offset, size,
       PSTR("\
 <option %s value='%d'>TCP</option>\
 <option %s value='%d'>Bluetooth</option>"),
-    (settings->nmea_out == NMEA_TCP ? "selected" : ""), NMEA_TCP,
-    (settings->nmea_out == NMEA_BLUETOOTH ? "selected" : ""), NMEA_BLUETOOTH);
+      (settings->nmea_out == NMEA_TCP       ? "selected" : ""), NMEA_TCP,
+      (settings->nmea_out == NMEA_BLUETOOTH ? "selected" : ""), NMEA_BLUETOOTH);
+
+    len = strlen(offset);
+    offset += len;
+    size -= len;
+  }
+  if (SoC->id == SOC_ESP32S2 || SoC->id == SOC_ESP32S3) {
+    snprintf_P ( offset, size,
+      PSTR("<option %s value='%d'>USB</option>"),
+      (settings->nmea_out == NMEA_USB       ? "selected" : ""), NMEA_USB);
 
     len = strlen(offset);
     offset += len;
@@ -432,20 +463,28 @@ void handleSettings() {
 <option %s value='%d'>Off</option>\
 <option %s value='%d'>Serial</option>\
 <option %s value='%d'>UDP</option>"),
-  (settings->gdl90 == GDL90_OFF ? "selected" : ""), GDL90_OFF,
+  (settings->gdl90 == GDL90_OFF  ? "selected" : ""), GDL90_OFF,
   (settings->gdl90 == GDL90_UART ? "selected" : ""), GDL90_UART,
-  (settings->gdl90 == GDL90_UDP ? "selected" : ""), GDL90_UDP);
+  (settings->gdl90 == GDL90_UDP  ? "selected" : ""), GDL90_UDP);
 
   len = strlen(offset);
   offset += len;
   size -= len;
 
   /* SoC specific part 3 */
-  if (SoC->id == SOC_ESP32) {
+  if (SoC->id == SOC_ESP32 || SoC->id == SOC_ESP32S3) {
     snprintf_P ( offset, size,
-      PSTR("\
-<option %s value='%d'>Bluetooth</option>"),
-    (settings->gdl90 == GDL90_BLUETOOTH ? "selected" : ""), GDL90_BLUETOOTH);
+      PSTR("<option %s value='%d'>Bluetooth</option>"),
+      (settings->gdl90 == GDL90_BLUETOOTH ? "selected" : ""), GDL90_BLUETOOTH);
+
+    len = strlen(offset);
+    offset += len;
+    size -= len;
+  }
+  if (SoC->id == SOC_ESP32S2 || SoC->id == SOC_ESP32S3) {
+    snprintf_P ( offset, size,
+      PSTR("<option %s value='%d'>USB</option>"),
+      (settings->gdl90 == GDL90_USB       ? "selected" : ""), GDL90_USB);
 
     len = strlen(offset);
     offset += len;
@@ -464,7 +503,7 @@ void handleSettings() {
 <select name='d1090'>\
 <option %s value='%d'>Off</option>\
 <option %s value='%d'>Serial</option>"),
-  (settings->d1090 == D1090_OFF ? "selected" : ""), D1090_OFF,
+  (settings->d1090 == D1090_OFF  ? "selected" : ""), D1090_OFF,
   (settings->d1090 == D1090_UART ? "selected" : ""), D1090_UART);
 
   len = strlen(offset);
@@ -472,11 +511,19 @@ void handleSettings() {
   size -= len;
 
   /* SoC specific part 4 */
-  if (SoC->id == SOC_ESP32) {
+  if (SoC->id == SOC_ESP32 || SoC->id == SOC_ESP32S3) {
     snprintf_P ( offset, size,
-      PSTR("\
-<option %s value='%d'>Bluetooth</option>"),
-    (settings->d1090 == D1090_BLUETOOTH ? "selected" : ""), D1090_BLUETOOTH);
+      PSTR("<option %s value='%d'>Bluetooth</option>"),
+      (settings->d1090 == D1090_BLUETOOTH ? "selected" : ""), D1090_BLUETOOTH);
+
+    len = strlen(offset);
+    offset += len;
+    size -= len;
+  }
+  if (SoC->id == SOC_ESP32S2 || SoC->id == SOC_ESP32S3) {
+    snprintf_P ( offset, size,
+      PSTR("<option %s value='%d'>USB</option>"),
+      (settings->d1090 == D1090_USB       ? "selected" : ""), D1090_USB);
 
     len = strlen(offset);
     offset += len;
@@ -516,7 +563,7 @@ void handleSettings() {
   (settings->power_save == POWER_SAVE_NONE ? "selected" : ""), POWER_SAVE_NONE,
   (settings->power_save == POWER_SAVE_WIFI ? "selected" : ""), POWER_SAVE_WIFI,
   (settings->power_save == POWER_SAVE_GNSS ? "selected" : ""), POWER_SAVE_GNSS,
-  (!settings->stealth ? "checked" : "") , (settings->stealth ? "checked" : ""),
+  (!settings->stealth  ? "checked" : "") , (settings->stealth  ? "checked" : ""),
   (!settings->no_track ? "checked" : "") , (settings->no_track ? "checked" : "")
   );
 
@@ -541,6 +588,22 @@ void handleSettings() {
     size -= len;
   }
 
+#if defined(USE_OGN_ENCRYPTION)
+  snprintf_P ( offset, size,
+    PSTR("\
+<tr>\
+<th align=left>IGC key (HEX)</th>\
+<td align=right>\
+<INPUT type='text' name='igc_key' maxlength='32' size='32' value='%08X%08X%08X%08X'>\
+</td>\
+</tr>"),
+  settings->igc_key[0], settings->igc_key[1], settings->igc_key[2], settings->igc_key[3]);
+
+  len = strlen(offset);
+  offset += len;
+  size -= len;
+#endif
+
   /* Common part 7 */
   snprintf_P ( offset, size,
     PSTR("\
@@ -561,9 +624,6 @@ void handleSettings() {
 }
 
 void handleRoot() {
-  int sec = millis() / 1000;
-  int min = sec / 60;
-  int hr = min / 60;
 
   float vdd = Battery_voltage() ;
   bool low_voltage = (Battery_voltage() <= Battery_threshold());
@@ -580,9 +640,9 @@ void handleRoot() {
     return;
   }
 
-  dtostrf(ThisAircraft.latitude, 8, 4, str_lat);
+  dtostrf(ThisAircraft.latitude,  8, 4, str_lat);
   dtostrf(ThisAircraft.longitude, 8, 4, str_lon);
-  dtostrf(ThisAircraft.altitude, 7, 1, str_alt);
+  dtostrf(ThisAircraft.altitude,  7, 1, str_alt);
   dtostrf(vdd, 4, 2, str_Vcc);
 
   snprintf_P ( Root_temp, 2300,
@@ -648,12 +708,12 @@ void handleRoot() {
     ,
     (SoC == NULL ? "NONE" : SoC->name),
     GNSS_name[hw_info.gnss],
-    (rf_chip == NULL ? "NONE" : rf_chip->name),
+    (rf_chip   == NULL ? "NONE" : rf_chip->name),
     (baro_chip == NULL ? "NONE" : baro_chip->name),
 #if defined(ENABLE_AHRS)
     (ahrs_chip == NULL ? "NONE" : ahrs_chip->name),
 #endif /* ENABLE_AHRS */
-    hr, min % 60, sec % 60, ESP.getFreeHeap(),
+    UpTime.hours, UpTime.minutes, UpTime.seconds, ESP.getFreeHeap(),
     low_voltage ? "red" : "green", str_Vcc,
     tx_packets_counter, rx_packets_counter,
     timestamp, sats, str_lat, str_lon, str_alt
@@ -669,7 +729,9 @@ void handleRoot() {
 
 void handleInput() {
 
-  char *Input_temp = (char *) malloc(1600);
+  size_t size = 1700;
+
+  char *Input_temp = (char *) malloc(size);
   if (Input_temp == NULL) {
     return;
   }
@@ -715,9 +777,21 @@ void handleInput() {
       settings->power_save = server.arg(i).toInt();
     } else if (server.argName(i).equals("rfc")) {
       settings->freq_corr = server.arg(i).toInt();
+#if defined(USE_OGN_ENCRYPTION)
+    } else if (server.argName(i).equals("igc_key")) {
+      char buf[32 + 1];
+      server.arg(i).toCharArray(buf, sizeof(buf));
+      settings->igc_key[3] = strtoul(buf + 24, NULL, 16);
+      buf[24] = 0;
+      settings->igc_key[2] = strtoul(buf + 16, NULL, 16);
+      buf[16] = 0;
+      settings->igc_key[1] = strtoul(buf +  8, NULL, 16);
+      buf[ 8] = 0;
+      settings->igc_key[0] = strtoul(buf +  0, NULL, 16);
+#endif
     }
   }
-  snprintf_P ( Input_temp, 1600,
+  snprintf_P ( Input_temp, size,
 PSTR("<html>\
 <head>\
 <meta http-equiv='refresh' content='15; url=/'>\
@@ -747,6 +821,7 @@ PSTR("<html>\
 <tr><th align=left>No track</th><td align=right>%s</td></tr>\
 <tr><th align=left>Power save</th><td align=right>%d</td></tr>\
 <tr><th align=left>Freq. correction</th><td align=right>%d</td></tr>\
+<tr><th align=left>IGC key</th><td align=right>%08X%08X%08X%08X</td></tr>\
 </table>\
 <hr>\
   <p align=center><h1 align=center>Restart is in progress... Please, wait!</h1></p>\
@@ -759,7 +834,8 @@ PSTR("<html>\
   BOOL_STR(settings->nmea_l), BOOL_STR(settings->nmea_s),
   settings->nmea_out, settings->gdl90, settings->d1090,
   BOOL_STR(settings->stealth), BOOL_STR(settings->no_track),
-  settings->power_save, settings->freq_corr
+  settings->power_save, settings->freq_corr,
+  settings->igc_key[0], settings->igc_key[1], settings->igc_key[2], settings->igc_key[3]
   );
   SoC->swSer_enableRx(false);
   server.send ( 200, "text/html", Input_temp );

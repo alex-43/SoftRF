@@ -242,6 +242,11 @@ int AXP20X_Class::setPowerOutPut(uint8_t ch, bool en)
 
 bool AXP20X_Class::isChargeing(void)
 {
+    return isCharging();
+}
+
+bool AXP20X_Class::isCharging(void)
+{
     uint8_t reg;
     if (!_init)
         return AXP_NOT_INIT;
@@ -369,7 +374,7 @@ float AXP20X_Class::getSysIPSOUTVoltage(void)
 {
     if (!_init)
         return AXP_NOT_INIT;
-    return _getRegistResult(AXP202_APS_AVERVOL_H8, AXP202_APS_AVERVOL_L4);
+    return _getRegistResult(AXP202_APS_AVERVOL_H8, AXP202_APS_AVERVOL_L4) * AXP202_APS_VOLTAGE_STEP;
 }
 
 /*
@@ -589,7 +594,7 @@ int AXP20X_Class::enableIRQ(uint64_t params, bool en)
     if (!_init)
         return AXP_NOT_INIT;
     uint8_t val, val1;
-    if (params & 0xFF) {
+    if (params & 0xFFUL) {
         val1 = params & 0xFF;
         _readByte(AXP202_INTEN1, 1, &val);
         if (en)
@@ -599,7 +604,7 @@ int AXP20X_Class::enableIRQ(uint64_t params, bool en)
         AXP_DEBUG("%s [0x%x]val:0x%x\n", en ? "enable" : "disable", AXP202_INTEN1, val);
         _writeByte(AXP202_INTEN1, 1, &val);
     }
-    if (params & 0xFF00) {
+    if (params & 0xFF00UL) {
         val1 = params >> 8;
         _readByte(AXP202_INTEN2, 1, &val);
         if (en)
@@ -610,7 +615,7 @@ int AXP20X_Class::enableIRQ(uint64_t params, bool en)
         _writeByte(AXP202_INTEN2, 1, &val);
     }
 
-    if (params & 0xFF0000) {
+    if (params & 0xFF0000UL) {
         val1 = params >> 16;
         _readByte(AXP202_INTEN3, 1, &val);
         if (en)
@@ -621,7 +626,7 @@ int AXP20X_Class::enableIRQ(uint64_t params, bool en)
         _writeByte(AXP202_INTEN3, 1, &val);
     }
 
-    if (params & 0xFF000000) {
+    if (params & 0xFF000000UL) {
         val1 = params >> 24;
         _readByte(AXP202_INTEN4, 1, &val);
         if (en)
@@ -632,7 +637,7 @@ int AXP20X_Class::enableIRQ(uint64_t params, bool en)
         _writeByte(AXP202_INTEN4, 1, &val);
     }
 
-    if (params & 0xFF00000000) {
+    if (params & 0xFF00000000ULL) {
         val1 = params >> 32;
         uint8_t reg = _chip_id == AXP192_CHIP_ID ? AXP192_INTEN5 : AXP202_INTEN5;
         _readByte(reg, 1, &val);
@@ -640,7 +645,7 @@ int AXP20X_Class::enableIRQ(uint64_t params, bool en)
             val |= val1;
         else
             val &= ~(val1);
-        AXP_DEBUG("%s [0x%x]val:0x%x\n", en ? "enable" : "disable", AXP202_INTEN5, val);
+        AXP_DEBUG("%s [0x%x]val:0x%x\n", en ? "enable" : "disable", reg, val);
         _writeByte(reg, 1, &val);
     }
     return AXP_PASS;
@@ -1212,7 +1217,12 @@ float AXP20X_Class::getSettingChargeCurrent(void)
     return cur;
 }
 
-bool AXP20X_Class::isChargeingEnable(void)
+bool  AXP20X_Class::isChargeingEnable(void)
+{
+    return isChargingEnable();
+}
+
+bool AXP20X_Class::isChargingEnable(void)
 {
     uint8_t val;
     if (!_init)
@@ -1230,12 +1240,28 @@ bool AXP20X_Class::isChargeingEnable(void)
 
 int AXP20X_Class::enableChargeing(bool en)
 {
+    return enableCharging(en);
+}
+
+int AXP20X_Class::enableCharging(bool en)
+{
     uint8_t val;
     if (!_init)
         return AXP_NOT_INIT;
     _readByte(AXP202_CHARGE1, 1, &val);
     val = en ? (val | _BV(7)) : val & (~_BV(7));
     _writeByte(AXP202_CHARGE1, 1, &val);
+    return AXP_PASS;
+}
+
+int AXP20X_Class::getChargingTargetVoltage(axp_chargeing_vol_t &chargeing_vol)
+{
+    uint8_t val;
+    if (!_init)
+        return AXP_NOT_INIT;
+    _readByte(AXP202_CHARGE1, 1, &val);
+    val &= (0b11 << 5);
+    chargeing_vol = (axp_chargeing_vol_t) (val >> 5);
     return AXP_PASS;
 }
 
@@ -1974,7 +2000,7 @@ int AXP20X_Class::setPowerDownVoltage(uint16_t mv)
     uint8_t val  = 0;
     ret = _readByte(AXP202_VOFF_SET, 1, &val);
     if (ret != 0)return AXP_FAIL;
-    val &= AXP202_VOFF_MASK;
+    val &= ~(AXP202_VOFF_MASK);
     val |= ((mv - 2600) / 100);
     ret = _writeByte(AXP202_VOFF_SET, 1, &val);
     if (ret != 0)return AXP_FAIL;
@@ -1987,7 +2013,7 @@ uint16_t AXP20X_Class::getPowerDownVoltage(void)
     uint8_t val  = 0;
     ret = _readByte(AXP202_VOFF_SET, 1, &val);
     if (ret != 0)return 0;
-    val &= ~(AXP202_VOFF_MASK);
+    val &= AXP202_VOFF_MASK;
     uint16_t voff = val * 100 + 2600;
     return voff;
 }
@@ -2032,7 +2058,7 @@ int AXP20X_Class::setCurrentLimitControl(axp192_limit_setting_t opt)
 int AXP20X_Class::setVWarningLevel1(uint16_t mv)
 {
     ISCONNECETD(AXP_NOT_INIT);
-    uint8_t val = (mv / 0.0014 / 4 - 2.8672) / 1000.0;
+    uint8_t val = (mv - 2867) / 5.6;
     AXP_DEBUG("setVWarningLevel1:0x%x\n", val);
     _writeByte(AXP202_APS_WARNING1, 1, &val);
     return AXP_PASS;
@@ -2041,7 +2067,7 @@ int AXP20X_Class::setVWarningLevel1(uint16_t mv)
 int AXP20X_Class::setVWarningLevel2(uint16_t mv)
 {
     ISCONNECETD(AXP_NOT_INIT);
-    uint8_t val = (mv / 0.0014 / 4 - 2.8672) / 1000.0;
+    uint8_t val = (mv - 2867) / 5.6;
     AXP_DEBUG("setVWarningLevel2:0x%x\n", val);
     _writeByte(AXP202_APS_WARNING2, 1, &val);
     return AXP_PASS;
@@ -2248,5 +2274,5 @@ int AXP20X_Class::_writeByte(uint8_t reg, uint8_t nbytes, uint8_t *data)
     }
     return _i2cPort->endTransmission();
 #endif
+    return 0;
 }
-

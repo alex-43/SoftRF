@@ -1,6 +1,6 @@
 /*
  * UATbridge(.ino) firmware
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * Author: Linar Yusupov, linar.r.yusupov@gmail.com
  *
@@ -56,7 +56,12 @@ hardware_info_t hw_info = {
   .rf       = RF_IC_NONE,
   .gnss     = GNSS_MODULE_NONE,
   .baro     = BARO_MODULE_NONE,
-  .display  = DISPLAY_NONE
+  .display  = DISPLAY_NONE,
+  .storage  = STORAGE_NONE,
+  .rtc      = RTC_NONE,
+  .imu      = IMU_NONE,
+  .mag      = MAG_NONE,
+  .pmu      = PMU_NONE,
 };
 
 #if defined(DEBUG_UAT)
@@ -219,11 +224,11 @@ void setup() {
   Serial.begin(STD_OUT_BR, SERIAL_OUT_BITS);
 
   Serial.println();
-  Serial.print(F(SOFTRF_IDENT));
+  Serial.print(F(SOFTRF_IDENT "-"));
   Serial.print(SoC->name);
   Serial.print(F(" FW.REV: " SOFTRF_FIRMWARE_VERSION " DEV.ID: "));
   Serial.println(String(SoC->getChipId(), HEX));
-  Serial.println(F("Copyright (C) 2015-2021 Linar Yusupov. All rights reserved."));
+  Serial.println(F("Copyright (C) 2015-2022 Linar Yusupov. All rights reserved."));
   Serial.flush();
 
   EEPROM_setup();

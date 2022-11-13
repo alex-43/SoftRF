@@ -1,6 +1,6 @@
 /*
  * Protocol.h
- * Copyright (C) 2017-2021 Linar Yusupov
+ * Copyright (C) 2017-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -53,7 +53,8 @@ enum
 	RF_CHECKSUM_TYPE_CCITT_1D02,
 	RF_CHECKSUM_TYPE_GALLAGER,
 	RF_CHECKSUM_TYPE_CRC8_107,
-	RF_CHECKSUM_TYPE_RS
+	RF_CHECKSUM_TYPE_RS,
+	RF_CHECKSUM_TYPE_CRC_MODES
 };
 
 enum
@@ -65,6 +66,7 @@ enum
 
 enum
 {
+	RF_FREQUENCY_DEVIATION_NONE,
 	RF_FREQUENCY_DEVIATION_19_2KHZ,
 	RF_FREQUENCY_DEVIATION_25KHZ,
 	RF_FREQUENCY_DEVIATION_50KHZ,
@@ -96,7 +98,18 @@ enum
 	RF_RX_BANDWIDTH_SS_1567KHZ
 };
 
+enum
+{
+	RF_TIMING_INTERVAL,
+	RF_TIMING_2SLOTS_PPS_SYNC
+};
+
 #define RF_MAX_SYNC_WORD_SIZE  8
+
+typedef struct tslot_struct {
+    uint16_t   begin;
+    uint16_t   end;
+} tslot_t;
 
 typedef struct RF_PROTOCOL {
     const char name[10];
@@ -118,8 +131,13 @@ typedef struct RF_PROTOCOL {
     uint8_t    whitening;
     uint8_t    bandwidth;
 
+    uint16_t   air_time;
+
+    uint8_t    tm_type;
     uint16_t   tx_interval_min;
     uint16_t   tx_interval_max;
+    tslot_t    slot0;
+    tslot_t    slot1;
 } rf_proto_desc_t;
 
 #endif /* PROTOCOL_H */

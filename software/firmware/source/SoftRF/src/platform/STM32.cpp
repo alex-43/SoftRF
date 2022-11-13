@@ -1,6 +1,6 @@
 /*
  * Platform_STM32.cpp
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,7 +20,10 @@
 
 #include <SPI.h>
 #include <Wire.h>
+
+#if !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
 #include <IWatchdog.h>
+#endif /* ARDUINO_WisDuo_RAK3172_Evaluation_Board */
 
 #include "../system/SoC.h"
 #include "../driver/RF.h"
@@ -34,7 +37,9 @@
 #include "../protocol/data/GDL90.h"
 #include "../protocol/data/D1090.h"
 
+#if !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
 #include <STM32LowPower.h>
+#endif /* ARDUINO_WisDuo_RAK3172_Evaluation_Board */
 
 // RFM95W pin mapping
 lmic_pinmap lmic_pins = {
@@ -52,21 +57,141 @@ lmic_pinmap lmic_pins = {
     .tcxo = LMIC_UNUSED_PIN,
 };
 
-#if defined(USBD_USE_CDC) && !defined(DISABLE_GENERIC_SERIALUSB)
-HardwareSerial Serial1(SOC_GPIO_PIN_CONS_RX,  SOC_GPIO_PIN_CONS_TX);
+#if defined(USBD_USE_CDC)
+#if !defined(DISABLE_GENERIC_SERIALUSB) || \
+    (defined(STM32_CORE_VERSION) && (STM32_CORE_VERSION > 0x01090000))
+HardwareSerial Serial1(SOC_GPIO_PIN_CONS_RX, SOC_GPIO_PIN_CONS_TX);
 #endif
+#endif /* USBD_USE_CDC */
 
 #if defined(ARDUINO_NUCLEO_L073RZ)
 
 HardwareSerial Serial2(USART2);
-HardwareSerial Serial4(SOC_GPIO_PIN_SWSER_RX, SOC_GPIO_PIN_SWSER_TX);
+HardwareSerial Serial4(SOC_GPIO_PIN_GNSS_RX, SOC_GPIO_PIN_GNSS_TX);
+
+static bool STM32_has_TCXO = false;
+static bool STM32_has_IMU  = false;
+
+#if !defined(EXCLUDE_IMU)
+#include <ICM_20948.h>
+ICM_20948_I2C imu;
+#endif /* EXCLUDE_IMU */
+#elif defined(ARDUINO_BLUEPILL_F103CB)
+
+HardwareSerial Serial2(SOC_GPIO_PIN_GNSS_RX, SOC_GPIO_PIN_GNSS_TX);
+HardwareSerial Serial3(SOC_GPIO_PIN_RX3,     SOC_GPIO_PIN_TX3);
+
+#elif defined(ARDUINO_GENERIC_WLE5CCUX)
+
+HardwareSerial Serial2(USART2);
 
 static bool STM32_has_TCXO = false;
 
-#elif defined(ARDUINO_BLUEPILL_F103CB)
+#ifdef HAL_SUBGHZ_MODULE_ENABLED
+void HAL_SUBGHZ_MspInit(SUBGHZ_HandleTypeDef * hsubghz)
+{
+    __HAL_RCC_SUBGHZSPI_CLK_ENABLE();
+    __HAL_RCC_SUBGHZSPI_FORCE_RESET();
+    __HAL_RCC_SUBGHZSPI_RELEASE_RESET();
+}
+#endif /* HAL_SUBGHZ_MODULE_ENABLED */
 
-HardwareSerial Serial2(SOC_GPIO_PIN_SWSER_RX, SOC_GPIO_PIN_SWSER_TX);
-HardwareSerial Serial3(SOC_GPIO_PIN_RX3,      SOC_GPIO_PIN_TX3);
+#elif defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
+
+char *dtostrf_workaround(double number, signed char width, unsigned char prec, char *s) {
+    bool negative = false;
+
+    if (isnan(number)) {
+        strcpy(s, "nan");
+        return s;
+    }
+    if (isinf(number)) {
+        strcpy(s, "inf");
+        return s;
+    }
+
+    char* out = s;
+
+    int fillme = width; // how many cells to fill for the integer part
+    if (prec > 0) {
+        fillme -= (prec+1);
+    }
+
+    // Handle negative numbers
+    if (number < 0.0) {
+        negative = true;
+        fillme--;
+        number = -number;
+    }
+
+    // Round correctly so that print(1.999, 2) prints as "2.00"
+    // I optimized out most of the divisions
+    double rounding = 2.0;
+    for (uint8_t i = 0; i < prec; ++i)
+        rounding *= 10.0;
+    rounding = 1.0 / rounding;
+
+    number += rounding;
+
+    // Figure out how big our number really is
+    double tenpow = 1.0;
+    int digitcount = 1;
+    while (number >= 10.0 * tenpow) {
+        tenpow *= 10.0;
+        digitcount++;
+    }
+
+    number /= tenpow;
+    fillme -= digitcount;
+
+    // Pad unused cells with spaces
+    while (fillme-- > 0) {
+        *out++ = ' ';
+    }
+
+    // Handle negative sign
+    if (negative) *out++ = '-';
+
+    // Print the digits, and if necessary, the decimal point
+    digitcount += prec;
+    int8_t digit = 0;
+    while (digitcount-- > 0) {
+        digit = (int8_t)number;
+        if (digit > 9) digit = 9; // insurance
+        *out++ = (char)('0' | digit);
+        if ((digitcount == prec) && (prec > 0)) {
+            *out++ = '.';
+        }
+        number -= digit;
+        number *= 10.0;
+    }
+
+    // make sure the string is terminated
+    *out = 0;
+    return s;
+}
+
+#ifndef SUPPORT_LORA
+
+extern "C" void service_lora_suspend(void) {
+}
+
+extern "C" void service_lora_resume(void) {
+}
+
+typedef enum _SERVICE_LORA_CLASS
+{
+  SERVICE_LORA_CLASS_A = 0,
+  SERVICE_LORA_CLASS_B = 1,
+  SERVICE_LORA_CLASS_C = 2,
+} SERVICE_LORA_CLASS;
+
+extern "C" int service_lora_get_real_class_from_stack(void)
+{
+  return SERVICE_LORA_CLASS_C;
+}
+
+#endif /* SUPPORT_LORA */
 
 #else
 #error "This hardware platform is not supported!"
@@ -94,11 +219,17 @@ static struct rst_info reset_info = {
 
 static uint32_t bootCount = 0;
 
+#if defined(EXCLUDE_EEPROM)
+eeprom_t eeprom_block;
+settings_t *settings = &eeprom_block.field.settings;
+#endif /* EXCLUDE_EEPROM */
+
 static int STM32_probe_pin(uint32_t pin, uint32_t mode)
 {
   int rval;
 
   pinMode(pin, mode);
+
   delay(20);
   rval = digitalRead(pin);
   pinMode(pin, INPUT);
@@ -108,6 +239,21 @@ static int STM32_probe_pin(uint32_t pin, uint32_t mode)
 
 static void STM32_SerialWakeup() { }
 static void STM32_ButtonWakeup() { }
+
+static void STM32_ULP_stop()
+{
+#if defined(ARDUINO_NUCLEO_L073RZ)
+  __disable_irq();
+
+  /* Enable Ultra low power mode */
+  HAL_PWREx_EnableUltraLowPower();
+  HAL_PWR_EnterSTOPMode( PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI );
+#else
+#if !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
+  LowPower_shutdown();
+#endif /* ARDUINO_WisDuo_RAK3172_Evaluation_Board */
+#endif /* ARDUINO_NUCLEO_L073RZ */
+}
 
 static void STM32_setup()
 {
@@ -128,10 +274,12 @@ static void STM32_setup()
         // This reset is induced by calling the ARM CMSIS `NVIC_SystemReset()` function!
         reset_info.reason = REASON_SOFT_RESTART; // "SOFTWARE_RESET"
     }
+#if !defined(ARDUINO_GENERIC_WLE5CCUX) && !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
     else if (__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST))
     {
         reset_info.reason = REASON_DEFAULT_RST; // "POWER-ON_RESET (POR) / POWER-DOWN_RESET (PDR)"
     }
+#endif /* ARDUINO_GENERIC_WLE5CCUX */
     else if (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST))
     {
         reset_info.reason = REASON_EXT_SYS_RST; // "EXTERNAL_RESET_PIN_RESET"
@@ -140,9 +288,16 @@ static void STM32_setup()
     // Clear all the reset flags or else they will remain set during future resets until system power is fully removed.
     __HAL_RCC_CLEAR_RESET_FLAGS();
 
+#if !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
     LowPower.begin();
+#endif /* ARDUINO_WisDuo_RAK3172_Evaluation_Board */
 
     hw_info.model = SOFTRF_MODEL_RETRO;
+
+#if !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
+    Wire.setSCL(SOC_GPIO_PIN_SCL);
+    Wire.setSDA(SOC_GPIO_PIN_SDA);
+#endif /* ARDUINO_WisDuo_RAK3172_Evaluation_Board */
 
 #if defined(ARDUINO_NUCLEO_L073RZ)
     stm32_board = STM32_TTGO_TWATCH_EB_1_3;
@@ -155,19 +310,79 @@ static void STM32_setup()
 
       hw_info.model = SOFTRF_MODEL_DONGLE;
       stm32_board   = STM32_TTGO_TMOTION_1_1;
+
+//      pinMode(TTGO_TIMPULSE_OLED_PIN_RST, INPUT_PULLUP); /* LP modded early rev. */
+
+      pinMode(TTGO_TIMPULSE_VDD_1V8_EN, INPUT_PULLUP);
+      delay(150);
+      pinMode(TTGO_TIMPULSE_GPS_PWR_EN, INPUT_PULLUP);
+      delay(50);
+
+      Wire.begin();
+      Wire.beginTransmission(ICM20948_ADDRESS);
+      STM32_has_IMU = (Wire.endTransmission() == 0);
+      Wire.end();
+
+      pinMode(SOC_GPIO_PIN_SDA,  INPUT_ANALOG);
+      pinMode(SOC_GPIO_PIN_SCL,  INPUT_ANALOG);
+
+      if (STM32_has_IMU) {
+        stm32_board   = STM32_TTGO_TIMPULSE_1_0;
+        hw_info.model = SOFTRF_MODEL_BRACELET;
+        hw_info.imu   = IMU_ICM20948;
+        hw_info.mag   = MAG_AK09916;
+
+        if (SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN) {
+          pinMode(TTGO_TIMPULSE_GPIO_PAD_PWR, INPUT_PULLUP);
+        }
+
+        pinMode(TTGO_TIMPULSE_OLED_PIN_RST, INPUT_PULLDOWN);
+      } else {
+        pinMode(TTGO_TIMPULSE_VDD_1V8_EN, INPUT_ANALOG);
+        pinMode(TTGO_TIMPULSE_GPS_PWR_EN, INPUT_ANALOG);
+      }
     }
 
     // PC_1 is Low for TCXO or High for Crystal
+#if !defined(ENFORCE_S78G)
     STM32_has_TCXO = (STM32_probe_pin(SOC_GPIO_PIN_OSC_SEL, INPUT) == 0);
-
+#endif
     if (STM32_has_TCXO) {
       lmic_pins.tcxo = SOC_GPIO_PIN_TCXO_OE;
       hal_pin_tcxo_init();
       hal_pin_tcxo(0); // disable TCXO
     }
 
+    /* De-activate 1.8V<->3.3V level shifters */
+    digitalWrite(SOC_GPIO_PIN_GNSS_LS, LOW);
+    delay(200);
+    pinMode(SOC_GPIO_PIN_GNSS_LS, INPUT_ANALOG);
+
+    digitalWrite(SOC_GPIO_PIN_ANT_RXTX, LOW);
+    pinMode(SOC_GPIO_PIN_ANT_RXTX, OUTPUT_OPEN_DRAIN);
+
+    if (!STM32_has_TCXO) {
+      // because PC1 = high for LoRa Crystal, need to be careful of leakage current
+      pinMode(SOC_GPIO_PIN_OSC_SEL, INPUT_PULLUP);
+    }
+
+    pinMode(SOC_GPIO_PIN_SS,  INPUT_PULLUP);
+
 #elif defined(ARDUINO_BLUEPILL_F103CB)
     stm32_board = STM32_BLUE_PILL;
+
+#elif defined(ARDUINO_GENERIC_WLE5CCUX)
+
+    /* TBD */
+    stm32_board = (SoC->getChipId() == 0x725c6907) ? STM32_EBYTE_E77 : STM32_OLIMEX_WLE5CC;
+    hw_info.model = SOFTRF_MODEL_BALKAN;
+
+#elif defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
+
+    /* TBD */
+    stm32_board   = STM32_RAK_3172_EB;
+    hw_info.model = SOFTRF_MODEL_BALKAN;
+
 #else
 #error "This hardware platform is not supported!"
 #endif
@@ -176,7 +391,11 @@ static void STM32_setup()
     SerialOutput.begin(SERIAL_OUT_BR, SERIAL_OUT_BITS);
 #endif
 
-    uint32_t shudown_reason = getBackupRegister(SHUTDOWN_REASON_INDEX);
+    uint32_t shudown_reason;
+#if !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
+    shudown_reason = getBackupRegister(SHUTDOWN_REASON_INDEX);
+    setBackupRegister(SHUTDOWN_REASON_INDEX, SOFTRF_SHUTDOWN_NONE);
+#endif /* ARDUINO_WisDuo_RAK3172_Evaluation_Board */
 
     switch (shudown_reason)
     {
@@ -191,49 +410,129 @@ static void STM32_setup()
 
       LowPower.deepSleep();
 
-      // Empty Serial Rx
-      while (SerialOutput.available()) { SerialOutput.read(); }
+      HAL_NVIC_SystemReset();
       break;
-#endif
-#if SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN
+#endif /* USE_SERIAL_DEEP_SLEEP */
     case SOFTRF_SHUTDOWN_BUTTON:
     case SOFTRF_SHUTDOWN_LOWBAT:
-      LowPower.attachInterruptWakeup(SOC_GPIO_PIN_BUTTON,
-                                     STM32_ButtonWakeup, RISING);
+#if defined(ARDUINO_NUCLEO_L073RZ)
+      if (hw_info.model == SOFTRF_MODEL_BRACELET) {
+        pinMode(TTGO_TIMPULSE_GPS_PWR_EN, INPUT_PULLDOWN);
+        pinMode(TTGO_TIMPULSE_VDD_1V8_EN, INPUT_PULLDOWN);
+      }
+#endif /* ARDUINO_NUCLEO_L073RZ */
+      if (SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN) {
+        pinMode(SOC_GPIO_PIN_BUTTON, hw_info.model == SOFTRF_MODEL_DONGLE ?
+                                     INPUT_PULLDOWN : INPUT);
+#if !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
+        LowPower.attachInterruptWakeup(SOC_GPIO_PIN_BUTTON,
+                                       STM32_ButtonWakeup, RISING);
 
-      LowPower.deepSleep();
+        LowPower.deepSleep();
+#endif /* ARDUINO_WisDuo_RAK3172_Evaluation_Board */
+
+        /* do not enter into DFU mode when BOOT button has dual function */
+        while (hw_info.model == SOFTRF_MODEL_DONGLE &&
+               digitalRead(SOC_GPIO_PIN_BUTTON) == HIGH);
+        HAL_NVIC_SystemReset();
+      } else {
+        STM32_ULP_stop();
+      }
       break;
-#endif
     default:
-      LowPower_shutdown();
+      STM32_ULP_stop();
       break;
     }
 
-    setBackupRegister(SHUTDOWN_REASON_INDEX, SOFTRF_SHUTDOWN_NONE);
-
+#if !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
     bootCount = getBackupRegister(BOOT_COUNT_INDEX);
     bootCount++;
     setBackupRegister(BOOT_COUNT_INDEX, bootCount);
+#endif /* ARDUINO_WisDuo_RAK3172_Evaluation_Board */
 
+#if !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
     pinMode(SOC_GPIO_PIN_BATTERY, INPUT_ANALOG);
-
-    Wire.setSCL(SOC_GPIO_PIN_SCL);
-    Wire.setSDA(SOC_GPIO_PIN_SDA);
+#endif /* ARDUINO_WisDuo_RAK3172_Evaluation_Board */
 
 #if defined(ARDUINO_NUCLEO_L073RZ)
     lmic_pins.rxe = SOC_GPIO_PIN_ANT_RXTX;
 
     // Set default value at Rx
     digitalWrite(SOC_GPIO_PIN_ANT_RXTX, HIGH);
-#endif /* ARDUINO_NUCLEO_L073RZ */
+
+    if (stm32_board == STM32_TTGO_TIMPULSE_1_0) {
+      delay(1);
+      pinMode(TTGO_TIMPULSE_OLED_PIN_RST, INPUT_PULLUP);
+
+#if !defined(EXCLUDE_IMU)
+      imu.begin();
+
+      pinMode(TTGO_TIMPULSE_SENSOR_INT, INPUT);
+#endif /* EXCLUDE_IMU */
+    }
+#elif defined(ARDUINO_GENERIC_WLE5CCUX)
+    switch (stm32_board)
+    {
+    case STM32_EBYTE_E77:
+      lmic_pins.rxe = SOC_GPIO_ANT_RX_E77;
+      lmic_pins.txe = SOC_GPIO_ANT_TX_E77;
+      break;
+    case STM32_SEEED_E5:
+      lmic_pins.rxe = SOC_GPIO_ANT_RX_E5;
+      lmic_pins.txe = SOC_GPIO_ANT_TX_E5;
+      STM32_has_TCXO = true;
+      lmic_pins.tcxo = SOC_GPIO_TCXO_E5;
+      break;
+    case STM32_ACSIP_ST50H: /* a.k.a. "RAK3172-SiP" */
+      lmic_pins.rxe = SOC_GPIO_ANT_RX_ST50;
+      lmic_pins.txe = SOC_GPIO_ANT_TX_ST50;
+      STM32_has_TCXO = true;
+      lmic_pins.tcxo = SOC_GPIO_TCXO_ST50;
+      break;
+    case STM32_RAK_3172_EB:
+      lmic_pins.rxe = SOC_GPIO_ANT_RX_3172;
+      lmic_pins.txe = SOC_GPIO_ANT_TX_3172;
+      break;
+    case STM32_OLIMEX_WLE5CC:
+    default:
+      lmic_pins.rxe = SOC_GPIO_ANT_RX_OLI;
+      lmic_pins.txe = SOC_GPIO_ANT_TX_OLI;
+
+      hal_set_rf_output(LOW); /* RFO_LP (default) */
+
+      Wire.begin();
+      Wire.beginTransmission(IIS2MDC_ADDRESS);
+      hw_info.mag = (Wire.endTransmission() == 0) ? MAG_IIS2MDC : MAG_NONE;
+      Wire.end();
+
+      break;
+    }
+
+    if (STM32_has_TCXO) {
+      hal_pin_tcxo(1);
+      pinMode(lmic_pins.tcxo, OUTPUT);
+    }
+#endif /* ARDUINO_NUCLEO_L073RZ || ARDUINO_GENERIC_WLE5CCUX */
+
+    Serial.begin(SERIAL_OUT_BR, SERIAL_OUT_BITS);
+
+#if defined(USBD_USE_CDC) && !defined(DISABLE_GENERIC_SERIALUSB)
+    /* Let host's USB and console drivers to warm-up */
+    delay(2000);
+#endif
 }
 
 static void STM32_post_init()
 {
 #if defined(ARDUINO_NUCLEO_L073RZ)
-  if (hw_info.model == SOFTRF_MODEL_DONGLE) {
+  if (hw_info.model == SOFTRF_MODEL_DONGLE ||
+      hw_info.model == SOFTRF_MODEL_BRACELET ) {
     Serial.println();
-    Serial.println(F("TTGO T-Motion (S76G) Power-on Self Test"));
+    Serial.print(F("TTGO "));
+    Serial.print(hw_info.model == SOFTRF_MODEL_BRACELET   ? F("T-Impulse") : F("T-Motion"));
+    Serial.print(F(" (S7"));
+    Serial.print(STM32_has_TCXO ? '6' : '8');
+    Serial.println(F("G) Power-on Self Test"));
     Serial.println();
     Serial.flush();
 
@@ -243,24 +542,61 @@ static void STM32_post_init()
     Serial.println(hw_info.rf      == RF_IC_SX1276        ? F("PASS") : F("FAIL"));
     if (hw_info.rf == RF_IC_SX1276) {
       Serial.print(F("CLK SRC : "));
-      Serial.println(STM32_has_TCXO                       ? F("TCXO") : F("Crystal"));
+      Serial.println(STM32_has_TCXO                       ? F("TCXO") : F("XTAL"));
     }
     Serial.print(F("GNSS    : "));
     Serial.println(hw_info.gnss    == GNSS_MODULE_SONY    ? F("PASS") : F("FAIL"));
 
-    Serial.println();
-    Serial.println(F("External components:"));
-    Serial.print(F("DISPLAY : "));
-    Serial.println(hw_info.display == DISPLAY_OLED_TTGO   ? F("PASS") : F("N/A"));
-    Serial.print(F("BMx280  : "));
-    Serial.println(hw_info.baro    == BARO_MODULE_BMP280  ? F("PASS") : F("N/A"));
+    if (hw_info.model == SOFTRF_MODEL_BRACELET) {
+      Serial.print(F("DISPLAY : "));
+      Serial.println(hw_info.display == DISPLAY_OLED_0_49 ? F("PASS") : F("N/A"));
+      Serial.print(F("IMU     : "));
+      Serial.println(STM32_has_IMU                        ? F("PASS") : F("N/A"));
+    }
+
+    if (hw_info.model == SOFTRF_MODEL_DONGLE) {
+      Serial.println();
+      Serial.println(F("External components:"));
+      Serial.print(F("DISPLAY : "));
+      Serial.println(hw_info.display == DISPLAY_OLED_TTGO ? F("PASS") : F("N/A"));
+      Serial.print(F("BMx280  : "));
+      Serial.println(hw_info.baro    == BARO_MODULE_BMP280 ? F("PASS") : F("N/A"));
+    }
 
     Serial.println();
-    Serial.println(F("Power-on Self Test is completed."));
+    Serial.println(F("Power-on Self Test is complete."));
     Serial.println();
     Serial.flush();
   }
-#endif /* ARDUINO_NUCLEO_L073RZ */
+#elif defined(ARDUINO_GENERIC_WLE5CCUX)
+  if (hw_info.model == SOFTRF_MODEL_BALKAN) {
+    Serial.println();
+    Serial.println(F("SoftRF Balkan Edition Power-on Self Test"));
+    Serial.println();
+    Serial.flush();
+
+    Serial.println(F("Built-in components:"));
+
+    Serial.print(F("RADIO   : "));
+    Serial.println(hw_info.rf      == RF_IC_SX1262       ? F("PASS") : F("FAIL"));
+    Serial.print(F("CLK SRC : "));
+    Serial.println(STM32_has_TCXO                        ? F("TCXO") : F("XTAL"));
+    Serial.print(F("BMx280  : "));
+    Serial.println(hw_info.baro    == BARO_MODULE_BMP280 ? F("PASS") : F("FAIL"));
+
+    Serial.println();
+    Serial.println(F("External components:"));
+    Serial.print(F("GNSS    : "));
+    Serial.println(hw_info.gnss    != GNSS_MODULE_NONE   ? F("PASS") : F("N/A"));
+    Serial.print(F("DISPLAY : "));
+    Serial.println(hw_info.display != DISPLAY_NONE       ? F("PASS") : F("N/A"));
+
+    Serial.println();
+    Serial.println(F("Power-on Self Test is complete."));
+    Serial.println();
+    Serial.flush();
+  }
+#endif /* ARDUINO_NUCLEO_L073RZ || ARDUINO_GENERIC_WLE5CCUX */
 
   Serial.println(F("Data output device(s):"));
 
@@ -301,43 +637,48 @@ static void STM32_post_init()
 
 static void STM32_loop()
 {
+#if !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
   // Reload the watchdog
   if (IWatchdog.isEnabled()) {
     IWatchdog.reload();
   }
+#endif /* ARDUINO_WisDuo_RAK3172_Evaluation_Board */
 }
 
 static void STM32_fini(int reason)
 {
 #if defined(ARDUINO_NUCLEO_L073RZ)
 
-  /* De-activate 1.8V<->3.3V level shifters */
-  digitalWrite(SOC_GPIO_PIN_GNSS_LS, LOW);
-  delay(100);
-  pinMode(SOC_GPIO_PIN_GNSS_LS, INPUT);
-
-  digitalWrite(SOC_GPIO_PIN_ANT_RXTX, LOW);
-  pinMode(SOC_GPIO_PIN_ANT_RXTX, OUTPUT_OPEN_DRAIN);
-
-  if (!STM32_has_TCXO) {
-    // because PC1 = high for LoRa Crystal, need to be careful of leakage current
-    pinMode(SOC_GPIO_PIN_OSC_SEL, INPUT_PULLUP);
+  if (hw_info.model == SOFTRF_MODEL_BRACELET) {
+#if !defined(EXCLUDE_IMU)
+    imu.sleep(true);
+    // imu.lowPower(true);
+#endif /* EXCLUDE_IMU */
   }
 #endif /* ARDUINO_NUCLEO_L073RZ */
 
-  swSer.end();
+  Serial_GNSS_In.end();
   Wire.end();
+
+#if !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
+  pinMode(SOC_GPIO_PIN_SDA,  INPUT_ANALOG);
+  pinMode(SOC_GPIO_PIN_SCL,  INPUT_ANALOG);
+
+  if (lmic_pins.rst != LMIC_UNUSED_PIN) pinMode(lmic_pins.rst,  INPUT_ANALOG);
+#endif /* ARDUINO_WisDuo_RAK3172_Evaluation_Board */
 
 #if defined(USBD_USE_CDC) && !defined(DISABLE_GENERIC_SERIALUSB)
   SerialOutput.end();
 #endif
 
+#if !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
   /*
    * Work around an issue that
    * WDT (once enabled) is active all the time
    * until hardware restart
    */
   setBackupRegister(SHUTDOWN_REASON_INDEX, reason);
+#endif /* ARDUINO_WisDuo_RAK3172_Evaluation_Board */
 
   HAL_NVIC_SystemReset();
 }
@@ -352,7 +693,6 @@ static uint32_t STM32_getChipId()
 #if !defined(SOFTRF_ADDRESS)
   /* Same method as STM32 OGN tracker does */
   uint32_t id = HAL_GetUIDw0() ^ HAL_GetUIDw1() ^ HAL_GetUIDw2();
-
   return DevID_Mapper(id);
 #else
   return (SOFTRF_ADDRESS & 0xFFFFFFFFU );
@@ -442,53 +782,92 @@ static void STM32_WiFi_transmit_UDP(int port, byte *buf, size_t size)
 
 static bool STM32_EEPROM_begin(size_t size)
 {
+#if !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
   if (size > E2END) {
     return false;
   }
 
+#if !defined(EXCLUDE_EEPROM)
   EEPROM.begin();
+#endif /* EXCLUDE_EEPROM */
+#endif /* ARDUINO_WisDuo_RAK3172_Evaluation_Board */
 
   return true;
 }
 
-static void STM32_EEPROM_extension()
+static void STM32_EEPROM_extension(int cmd)
 {
-  if (settings->nmea_out == NMEA_BLUETOOTH) {
+  if (cmd == EEPROM_EXT_LOAD) {
+    if (settings->mode != SOFTRF_MODE_NORMAL
+#if !defined(EXCLUDE_TEST_MODE)
+        &&
+        settings->mode != SOFTRF_MODE_TXRX_TEST
+#endif /* EXCLUDE_TEST_MODE */
+        ) {
+      settings->mode = SOFTRF_MODE_NORMAL;
+    }
+
+    if (settings->nmea_out == NMEA_BLUETOOTH ||
+        settings->nmea_out == NMEA_UDP       ||
+        settings->nmea_out == NMEA_TCP ) {
 #if defined(USBD_USE_CDC) && !defined(DISABLE_GENERIC_SERIALUSB)
-    settings->nmea_out = NMEA_USB;
+      settings->nmea_out = NMEA_USB;
 #else
-    settings->nmea_out = NMEA_UART;
+      settings->nmea_out = NMEA_UART;
 #endif
-  }
-  if (settings->gdl90 == GDL90_BLUETOOTH) {
+    }
+    if (settings->gdl90 == GDL90_BLUETOOTH  ||
+        settings->gdl90 == GDL90_UDP) {
 #if defined(USBD_USE_CDC) && !defined(DISABLE_GENERIC_SERIALUSB)
-    settings->gdl90 = GDL90_USB;
+      settings->gdl90 = GDL90_USB;
 #else
-    settings->gdl90 = GDL90_UART;
+      settings->gdl90 = GDL90_UART;
 #endif
-  }
-  if (settings->d1090 == D1090_BLUETOOTH) {
+    }
+    if (settings->d1090 == D1090_BLUETOOTH  ||
+        settings->d1090 == D1090_UDP) {
 #if defined(USBD_USE_CDC) && !defined(DISABLE_GENERIC_SERIALUSB)
-    settings->d1090 = D1090_USB;
+      settings->d1090 = D1090_USB;
 #else
-    settings->d1090 = D1090_UART;
+      settings->d1090 = D1090_UART;
 #endif
+    }
+
+#if defined(ARDUINO_NUCLEO_L073RZ)
+    if (hw_info.model == SOFTRF_MODEL_BRACELET) {
+      if (settings->nmea_out == NMEA_UART)  { settings->nmea_out = NMEA_USB;  }
+      if (settings->gdl90    == GDL90_UART) { settings->gdl90    = GDL90_USB; }
+      if (settings->d1090    == D1090_UART) { settings->d1090    = D1090_USB; }
+    }
+#elif defined(ARDUINO_GENERIC_WLE5CCUX)
+    if (settings->nmea_out != NMEA_OFF) {
+      settings->nmea_out = NMEA_UART;
+    }
+    if (settings->gdl90 != GDL90_OFF) {
+      settings->gdl90 = GDL90_UART;
+    }
+    if (settings->d1090 != D1090_OFF) {
+      settings->d1090 = D1090_UART;
+    }
+#endif /* ARDUINO_NUCLEO_L073RZ || ARDUINO_GENERIC_WLE5CCUX */
   }
 }
 
 static void STM32_SPI_begin()
 {
+#if !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
   SPI.setMISO(SOC_GPIO_PIN_MISO);
-  SPI.setMOSI(SOC_GPIO_PIN_MOSI);
-  SPI.setSCLK(SOC_GPIO_PIN_SCK);
+  SPI.setMOSI(stm32_board == STM32_EBYTE_E77 ? PB5 /*NC*/ : SOC_GPIO_PIN_MOSI);
+  SPI.setSCLK(stm32_board == STM32_SEEED_E5  ? PB3 /*NC*/ : SOC_GPIO_PIN_SCK);
   // Slave Select pin is driven by RF driver
+#endif /* ARDUINO_WisDuo_RAK3172_Evaluation_Board */
 
   SPI.begin();
 }
 
 static void STM32_swSer_begin(unsigned long baud)
 {
-  swSer.begin(baud);
+  Serial_GNSS_In.begin(baud);
 
 #if defined(ARDUINO_NUCLEO_L073RZ)
   /* drive GNSS RST pin low */
@@ -556,13 +935,15 @@ static float STM32_Battery_param(uint8_t param)
   switch (param)
   {
   case BATTERY_PARAM_THRESHOLD:
-    rval = hw_info.model == SOFTRF_MODEL_DONGLE ? BATTERY_THRESHOLD_LIPO   :
-                                                  BATTERY_THRESHOLD_NIMHX2;
+    rval = hw_info.model == SOFTRF_MODEL_DONGLE  ||
+           hw_info.model == SOFTRF_MODEL_BRACELET ? BATTERY_THRESHOLD_LIPO   :
+                                                    BATTERY_THRESHOLD_NIMHX2;
     break;
 
   case BATTERY_PARAM_CUTOFF:
-    rval = hw_info.model == SOFTRF_MODEL_DONGLE ? BATTERY_CUTOFF_LIPO   :
-                                                  BATTERY_CUTOFF_NIMHX2;
+    rval = hw_info.model == SOFTRF_MODEL_DONGLE ||
+           hw_info.model == SOFTRF_MODEL_BRACELET ? BATTERY_CUTOFF_LIPO   :
+                                                    BATTERY_CUTOFF_NIMHX2;
     break;
 
   case BATTERY_PARAM_CHARGE:
@@ -584,7 +965,6 @@ static float STM32_Battery_param(uint8_t param)
 
   case BATTERY_PARAM_VOLTAGE:
   default:
-
 #ifdef __LL_ADC_CALC_VREFANALOG_VOLTAGE
     int32_t Vref = (__LL_ADC_CALC_VREFANALOG_VOLTAGE(analogRead(AVREF), LL_ADC_RESOLUTION));
 #else
@@ -635,20 +1015,23 @@ static void STM32_UATModule_restart()
 
 static void STM32_WDT_setup()
 {
+#if !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
   // Init the watchdog timer with 5 seconds timeout
   IWatchdog.begin(5000000);
+#endif /* ARDUINO_WisDuo_RAK3172_Evaluation_Board */
 }
 
 static void STM32_WDT_fini()
 {
   /* once emabled - there is no way to disable WDT on STM32 */
 
+#if !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
   if (IWatchdog.isEnabled()) {
     IWatchdog.set(IWDG_TIMEOUT_MAX);
   }
+#endif /* ARDUINO_WisDuo_RAK3172_Evaluation_Board */
 }
 
-#if SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN
 #include <AceButton.h>
 using namespace ace_button;
 
@@ -681,18 +1064,21 @@ void handleEvent(AceButton* button, uint8_t eventType,
 void onPageButtonEvent() {
   button_1.check();
 }
-#endif /* SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN */
 
 static void STM32_Button_setup()
 {
-#if SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN
-  if (hw_info.model == SOFTRF_MODEL_DONGLE) {
+  if (SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN   &&
+      (hw_info.model == SOFTRF_MODEL_DONGLE   ||
+       hw_info.model == SOFTRF_MODEL_BRACELET ||
+       hw_info.model == SOFTRF_MODEL_BALKAN)) {
     int button_pin = SOC_GPIO_PIN_BUTTON;
 
     // BOOT0 button(s) uses external pull DOWN resistor.
-    pinMode(button_pin, INPUT);
+    pinMode(button_pin,
+            hw_info.model == SOFTRF_MODEL_DONGLE ? INPUT_PULLDOWN :
+            hw_info.model == SOFTRF_MODEL_BALKAN ? INPUT_PULLUP : INPUT);
 
-    button_1.init(button_pin, LOW);
+    button_1.init(button_pin, hw_info.model == SOFTRF_MODEL_BALKAN ? HIGH : LOW);
 
     // Configure the ButtonConfig with the event handler, and enable all higher
     // level events.
@@ -705,25 +1091,34 @@ static void STM32_Button_setup()
     PageButtonConfig->setClickDelay(600);
     PageButtonConfig->setLongPressDelay(2000);
   }
-#endif /* SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN */
 }
 
 static void STM32_Button_loop()
 {
-#if SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN
-  if (hw_info.model == SOFTRF_MODEL_DONGLE) {
+  if (SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN   &&
+      (hw_info.model == SOFTRF_MODEL_DONGLE   ||
+       hw_info.model == SOFTRF_MODEL_BRACELET ||
+       hw_info.model == SOFTRF_MODEL_BALKAN)) {
     button_1.check();
   }
-#endif /* SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN */
 }
 
 static void STM32_Button_fini()
 {
-#if SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN
-  if (hw_info.model == SOFTRF_MODEL_DONGLE) {
+  if (SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN   &&
+      (hw_info.model == SOFTRF_MODEL_DONGLE   ||
+       hw_info.model == SOFTRF_MODEL_BRACELET ||
+       hw_info.model == SOFTRF_MODEL_BALKAN)) {
+    pinMode(SOC_GPIO_PIN_BUTTON,
+            hw_info.model == SOFTRF_MODEL_DONGLE ? INPUT_PULLDOWN :
+            hw_info.model == SOFTRF_MODEL_BALKAN ? INPUT_PULLUP : INPUT);
+    bool button_is_active = (hw_info.model == SOFTRF_MODEL_BALKAN ? LOW : HIGH);
+    while (digitalRead(SOC_GPIO_PIN_BUTTON) == button_is_active);
+
+#if !defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board)
     pinMode(SOC_GPIO_PIN_BUTTON, INPUT_ANALOG);
+#endif /* ARDUINO_WisDuo_RAK3172_Evaluation_Board */
   }
-#endif /* SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN */
 }
 
 #if defined(USBD_USE_CDC)
@@ -824,7 +1219,8 @@ const SoC_ops_t STM32_ops = {
   STM32_WDT_fini,
   STM32_Button_setup,
   STM32_Button_loop,
-  STM32_Button_fini
+  STM32_Button_fini,
+  NULL
 };
 
 #endif /* ARDUINO_ARCH_STM32 */

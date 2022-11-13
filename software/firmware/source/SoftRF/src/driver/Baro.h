@@ -1,6 +1,6 @@
 /*
  * BaroHelper.h
- * Copyright (C) 2018-2021 Linar Yusupov
+ * Copyright (C) 2018-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,6 +41,7 @@ typedef struct barochip_ops_struct {
   const char name[10];
   bool (*probe)();
   void (*setup)();
+  void (*fini)();
   float (*altitude)(float);
   float (*pressure)();
   float (*temperature)();
@@ -51,6 +52,7 @@ extern barochip_ops_t *baro_chip;
 bool  Baro_probe(void);
 byte  Baro_setup(void);
 void  Baro_loop(void);
+void  Baro_fini(void);
 float Baro_altitude(void);
 float Baro_pressure(void);
 float Baro_temperature(void);

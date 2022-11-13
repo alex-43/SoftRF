@@ -1,6 +1,6 @@
 /*
  * Platform_PSoC4.h
- * Copyright (C) 2020-2021 Linar Yusupov
+ * Copyright (C) 2020-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#if defined(__ASR6501__)
+#if defined(__ASR6501__) || defined(ARDUINO_ARCH_ASR650X)
 
 #ifndef PLATFORM_PSOC4_H
 #define PLATFORM_PSOC4_H
@@ -25,7 +25,7 @@
 /* Maximum of tracked flying objects is now SoC-specific constant */
 #define MAX_TRACKING_OBJECTS    8
 
-#define DEFAULT_SOFTRF_MODEL    SOFTRF_MODEL_MULTI
+#define DEFAULT_SOFTRF_MODEL    SOFTRF_MODEL_OCTAVE
 
 #define isValidFix()            isValidGNSSFix()
 
@@ -60,6 +60,13 @@ enum rst_reason {
   REASON_EXT_SYS_RST      = 6   /* external system reset */
 };
 
+enum PSoC4_board_id {
+  PSOC4_HELTEC_CUBECELL_GPS_V1_0,
+  PSOC4_HELTEC_CUBECELL_GPS_V1_1,
+  PSOC4_EBYTE_E78,
+  PSOC4_AITHINKER_RA_07H,         /* XTAL */
+};
+
 struct rst_info {
   uint32_t reason;
   uint32_t exccause;
@@ -71,10 +78,21 @@ struct rst_info {
 };
 
 #if defined(CubeCell_GPS)
-#define swSer                 Serial1
+#define Serial_GNSS_In        Serial1
+#define Serial_GNSS_Out       Serial_GNSS_In
 #else
-#define swSer                 Serial
+#include <softSerial.h>
+extern softSerial swSer;
+
+//#define Serial_GNSS_In      swSer
+//#define Serial_GNSS_Out     Serial_GNSS_In
+
+#define Serial_GNSS_In        Serial
+#define Serial_GNSS_Out       swSer
+
+#define GNSS_FLUSH()          ({ })
 #endif /* CubeCell_GPS */
+
 #define UATSerial             Serial
 
 #define SOC_ADC_VOLTAGE_DIV   2 // HTCC-AB02S has Vbat 100k/100k voltage divider
@@ -83,8 +101,13 @@ struct rst_info {
 #define SOC_GPIO_PIN_CONS_RX  UART_RX
 #define SOC_GPIO_PIN_CONS_TX  UART_TX
 
-#define SOC_GPIO_PIN_SWSER_RX UART_RX2
-#define SOC_GPIO_PIN_SWSER_TX UART_TX2
+#if defined(CubeCell_GPS)
+#define SOC_GPIO_PIN_GNSS_RX  UART_RX2
+#define SOC_GPIO_PIN_GNSS_TX  UART_TX2
+#else
+#define SOC_GPIO_PIN_GNSS_RX  GPIO4        // P0_7, RTS
+#define SOC_GPIO_PIN_GNSS_TX  GPIO5        // P0_6, CTS
+#endif /* CubeCell_GPS */
 
 #define SOC_GPIO_PIN_STATUS   SOC_UNUSED_PIN
 #define SOC_GPIO_PIN_BUZZER   SOC_UNUSED_PIN
@@ -117,22 +140,31 @@ struct rst_info {
 
 #if defined(CubeCell_GPS)
 #define SOC_GPIO_PIN_LED      RGB          // P0_6
-#define SOC_GPIO_PIN_GNSS_PPS GPIO8
+#define SOC_GPIO_PIN_GNSS_PPS (gnss_chip == &goke_ops ? \
+                               GPIO8 /* V1.0 */ : GPIO12 /* V1.1 */)
 #define SOC_GPIO_PIN_BATTERY  ADC1         // P2_0
 
 #define SOC_GPIO_PIN_GNSS_PWR GPIO14       // P0_7
 #define SOC_GPIO_PIN_OLED_RST GPIO10       // P7_2
-#define SOC_GPIO_PIN_OLED_PWR Vext         // P3_2
-#define SOC_GPIO_PIN_BAT_CTL  VBAT_ADC_CTL // P3_3
+#define SOC_GPIO_PIN_OLED_PWR Vext         // P3_2, SWD_DATA
+#define SOC_GPIO_PIN_BAT_CTL  VBAT_ADC_CTL // P3_3, SWD_CLK
 #define SOC_GPIO_PIN_BUTTON   USER_KEY     // P3_3
 
 #define SOC_GPIO_PIN_BMON_DIS GPIO7        // P3_7
 #else /* CubeCell_GPS */
 
-#define SOC_GPIO_PIN_LED      SOC_UNUSED_PIN
-#define SOC_GPIO_PIN_GNSS_PPS SOC_UNUSED_PIN
-#define SOC_GPIO_PIN_BATTERY  SOC_UNUSED_PIN
-#define SOC_GPIO_PIN_BUTTON   SOC_UNUSED_PIN
+#define SOC_GPIO_PIN_LED      SOC_UNUSED_PIN // GPIO2,P6_2,AUX
+#define SOC_GPIO_PIN_GNSS_PPS GPIO0          // P0_2,SETB
+#define SOC_GPIO_PIN_BATTERY  ADC            // P2_3,ADC_IN
+#define SOC_GPIO_PIN_BUTTON   GPIO3          // P6_4,SETA
+#define SOC_GPIO_PIN_GNSS_PWR SOC_UNUSED_PIN
+#define SOC_GPIO_PIN_BMON_DIS SOC_UNUSED_PIN
+#define SOC_GPIO_PIN_OLED_RST SOC_UNUSED_PIN
+#define SOC_GPIO_PIN_OLED_PWR SOC_UNUSED_PIN
+
+#if !defined(VBAT_ADC_CTL)
+#define VBAT_ADC_CTL          SOC_UNUSED_PIN
+#endif /* VBAT_ADC_CTL */
 #endif /* CubeCell_GPS */
 
 #define EXCLUDE_WIFI
@@ -142,11 +174,21 @@ struct rst_info {
 #define EXCLUDE_TRAFFIC_FILTER_EXTENSION
 #define EXCLUDE_LK8EX1
 
+#if defined(CubeCell_GPS)
 #define EXCLUDE_GNSS_UBLOX
 #define EXCLUDE_GNSS_SONY
 #define EXCLUDE_GNSS_MTK
 //#define EXCLUDE_GNSS_GOKE
 //#define EXCLUDE_GNSS_AT65
+#else
+//#define EXCLUDE_GNSS_UBLOX
+#define EXCLUDE_GNSS_SONY
+//#define EXCLUDE_GNSS_MTK
+#define EXCLUDE_GNSS_GOKE
+#define EXCLUDE_GNSS_AT65
+#endif /* CubeCell_GPS */
+
+#define EXCLUDE_LOG_GNSS_VERSION
 
 /* Component                         Cost */
 /* -------------------------------------- */
@@ -164,14 +206,14 @@ struct rst_info {
 #define USE_BASICMAC
 #define EXCLUDE_SX1276           //  -  3 kb
 
-#if defined(CubeCell_GPS)
-#define USE_OLED                 //  +    kb
-#define EXCLUDE_OLED_BARO_PAGE
-#endif
+#define USE_TIME_SLOTS
 
-/* SoftRF/PSoC PFLAU NMEA sentence extension. In use by WebTop adapter */
-#define PFLAU_EXT1_FMT  ",%06X,%d,%d,%d"
-#define PFLAU_EXT1_ARGS ,ThisAircraft.addr,settings->rf_protocol,rx_packets_counter,tx_packets_counter
+//#define USE_OGN_ENCRYPTION
+
+#define USE_OLED                 //  +    kb
+#define EXCLUDE_OLED_049
+#define EXCLUDE_OLED_BARO_PAGE
+#define EXCLUDE_IMU
 
 /* trade performance for flash memory usage (-4 Kb) */
 #define cosf(x)                 cos  ((double) (x))
@@ -197,4 +239,4 @@ extern CubeCell_NeoPixel strip;
 
 #endif /* PLATFORM_PSOC4_H */
 
-#endif /* __ASR6501__ */
+#endif /* __ASR6501__ || ARDUINO_ARCH_ASR650X */

@@ -2,7 +2,7 @@
  *
  * Protocol_OGNTP.h
  * Encoder and decoder for Open Glider Network tracker radio protocol
- * Copyright (C) 2017-2021 Linar Yusupov
+ * Copyright (C) 2017-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,6 +29,8 @@
 #define OGNTP_PAYLOAD_SIZE    20
 #define OGNTP_CRC_TYPE        RF_CHECKSUM_TYPE_GALLAGER
 #define OGNTP_CRC_SIZE        6
+
+#define OGNTP_AIR_TIME        6 /* in ms */
 
 #define OGNTP_TX_INTERVAL_MIN 600 /* in ms */
 #define OGNTP_TX_INTERVAL_MAX 1400

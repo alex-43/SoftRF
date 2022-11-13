@@ -1,6 +1,4 @@
 /**
- * @file Adafruit_QSPI_Flash.h
- *
  * The MIT License (MIT)
  *
  * Copyright (c) 2019 Ha Thach and Dean Miller for Adafruit Industries LLC
@@ -76,6 +74,8 @@ protected:
 
   int _ind_pin;
   bool _ind_active;
+
+  void write_status_register(uint8_t const status[2]);
 
   void _indicator_on(void) {
     if (_ind_pin >= 0) {

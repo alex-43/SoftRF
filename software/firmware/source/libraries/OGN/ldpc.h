@@ -5,17 +5,17 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#if defined(__ASR6501__) || defined(ENERGIA_ARCH_CC13X2)
+#if defined(__ASR6501__) || defined(ENERGIA_ARCH_CC13X2) || \
+    defined(ARDUINO_ARCH_ASR650X) || defined(ARDUINO_ARCH_ASR6601)
 #undef min
 #undef max
 #endif
-
-#include <limits>
 
 #include "bitcount.h"
 
 #ifndef __AVR__
 // #include <stdio.h>
+#include <limits>
 #include <math.h>
 #endif
 

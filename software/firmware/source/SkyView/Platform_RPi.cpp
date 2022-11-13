@@ -1,6 +1,6 @@
 /*
  * Platform_RPi.cpp
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -59,8 +59,11 @@ TTYSerial SerialInput("/dev/ttyACM0");
 static const uint8_t SS    = 8; // pin 24
 
 /* Waveshare Pi HAT 2.7" */
-GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> epd_waveshare(GxEPD2_270(/*CS=*/ SS,
+GxEPD2_BW<GxEPD2_270, GxEPD2_270::HEIGHT> epd_waveshare_W3(GxEPD2_270(/*CS=*/ SS,
                                        /*DC=*/ 25, /*RST=*/ 17, /*BUSY=*/ 24));
+GxEPD2_BW<GxEPD2_270_T91, GxEPD2_270_T91::HEIGHT> epd_waveshare_T91(GxEPD2_270_T91(/*CS=*/ SS,
+                                       /*DC=*/ 25, /*RST=*/ 17, /*BUSY=*/ 24));
+
 
 Adafruit_SSD1306 odisplay(SCREEN_WIDTH, SCREEN_HEIGHT,
   &SPI, /*DC=*/ 25, /*RST=*/ 17, /*CS=*/ SS);
@@ -234,7 +237,11 @@ static float RPi_Battery_voltage()
 
 static void RPi_EPD_setup()
 {
-  display = &epd_waveshare;
+#if !defined(USE_GDEY027T91)
+  display = &epd_waveshare_W3;
+#else
+  display = &epd_waveshare_T91;
+#endif /* USE_GDEY027T91 */
 }
 
 static void RPi_EPD_fini()
@@ -735,7 +742,7 @@ int main(int argc, char *argv[])
   Serial.print(SoC->name);
   Serial.print(F(" FW.REV: " SKYVIEW_FIRMWARE_VERSION " DEV.ID: "));
   Serial.println(String(SoC->getChipId(), HEX));
-  Serial.println(F("Copyright (C) 2019-2021 Linar Yusupov. All rights reserved."));
+  Serial.println(F("Copyright (C) 2019-2022 Linar Yusupov. All rights reserved."));
   Serial.flush();
 
   RPi_ParseSettings();

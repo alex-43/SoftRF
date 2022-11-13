@@ -1,3 +1,27 @@
+/**
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2019 Ha Thach and Dean Miller for Adafruit Industries LLC
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
 #include "Adafruit_SPIFlashBase.h"
 #include "pins_arduino.h"
 #include <SPI.h>
@@ -22,12 +46,52 @@
 
 #endif
 
-#if !CONFIG_IDF_TARGET_ESP32S2
+Adafruit_SPIFlashBase::Adafruit_SPIFlashBase() {
+  _trans = NULL;
+  _flash_dev = NULL;
+  _ind_pin = -1;
+  _ind_active = true;
+}
+
+Adafruit_SPIFlashBase::Adafruit_SPIFlashBase(
+    Adafruit_FlashTransport *transport) {
+  _trans = transport;
+  _flash_dev = NULL;
+  _ind_pin = -1;
+  _ind_active = true;
+}
+
+#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_RP2040)
+
+// For ESP32 and RP2040 the SPI flash is already detected and configured
+// We could skip the initial sequence
+bool Adafruit_SPIFlashBase::begin(SPIFlash_Device_t const *flash_devs,
+                                  size_t count) {
+  (void)flash_devs;
+  (void)count;
+
+  if (_trans == NULL) {
+    return false;
+  }
+
+  _trans->begin();
+
+#if defined(ARDUINO_ARCH_ESP32)
+  _flash_dev = ((Adafruit_FlashTransport_ESP32 *)_trans)->getFlashDevice();
+#elif defined(ARDUINO_ARCH_RP2040)
+  _flash_dev = ((Adafruit_FlashTransport_RP2040 *)_trans)->getFlashDevice();
+#endif
+
+  return true;
+}
+
+#else
 
 /// List of all possible flash devices used by Adafruit boards
 static const SPIFlash_Device_t possible_devices[] = {
     // Main devices used in current Adafruit products
     GD25Q16C,
+    GD25Q32C,
     GD25Q64C,
     S25FL116K,
     S25FL216K,
@@ -42,11 +106,11 @@ static const SPIFlash_Device_t possible_devices[] = {
     MB85RS2MTA,
     MB85RS4MT,
 
-    // Nordic PCA10056
-    MX25R6435F,
-
     // Other common flash devices
     W25Q16JV_IQ,
+    W25Q32JV_IQ,
+    AT25SF041,
+    AT25DF081A,
 };
 
 /// Flash device list count
@@ -68,39 +132,25 @@ static SPIFlash_Device_t const *findDevice(SPIFlash_Device_t const *device_list,
   }
   return NULL;
 }
-#endif
 
-Adafruit_SPIFlashBase::Adafruit_SPIFlashBase() {
-  _trans = NULL;
-  _flash_dev = NULL;
-  _ind_pin = -1;
-  _ind_active = true;
-}
-
-Adafruit_SPIFlashBase::Adafruit_SPIFlashBase(
-    Adafruit_FlashTransport *transport) {
-  _trans = transport;
-  _flash_dev = NULL;
-  _ind_pin = -1;
-  _ind_active = true;
+void Adafruit_SPIFlashBase::write_status_register(uint8_t const status[2]) {
+  if (_flash_dev->write_status_register_split) {
+    _trans->writeCommand(SFLASH_CMD_WRITE_STATUS2, status + 1, 1);
+  } else if (_flash_dev->single_status_byte) {
+    _trans->writeCommand(SFLASH_CMD_WRITE_STATUS, status + 1, 1);
+  } else {
+    _trans->writeCommand(SFLASH_CMD_WRITE_STATUS, status, 2);
+  }
 }
 
 bool Adafruit_SPIFlashBase::begin(SPIFlash_Device_t const *flash_devs,
                                   size_t count) {
-  if (_trans == NULL)
+  if (_trans == NULL) {
     return false;
+  }
 
   _trans->begin();
 
-#if CONFIG_IDF_TARGET_ESP32S2
-  (void)flash_devs;
-  (void)count;
-
-  // For ESP32S2 the spi flash is already detected and configured
-  // We could skip the initial sequence
-  _flash_dev = ((Adafruit_FlashTransport_ESP32 *)_trans)->getFlashDevice();
-
-#else
   //------------- flash detection -------------//
   // Note: Manufacturer can be assigned with numerous of continuation code
   // (0x7F)
@@ -159,14 +209,19 @@ bool Adafruit_SPIFlashBase::begin(SPIFlash_Device_t const *flash_devs,
   }
 
   // Speed up to max device frequency, or as high as possible
-  uint32_t const wr_speed = min(
-      (uint32_t)_flash_dev->max_clock_speed_mhz * 1000000U, (uint32_t)F_CPU);
+  uint32_t wr_speed = _flash_dev->max_clock_speed_mhz * 1000000U;
+
+#ifdef F_CPU
+  // Limit to CPU speed if defined
+  wr_speed = min(wr_speed, (uint32_t)F_CPU);
+#endif
+
   uint32_t rd_speed = wr_speed;
 
 #if defined(ARDUINO_ARCH_SAMD) && !defined(__SAMD51__)
   // Hand-on testing show that SAMD21 M0 can write up to 24 Mhz,
-  // but can only read reliably at 12 Mhz
-  rd_speed = min(12000000, rd_speed);
+  // but only read reliably at 12 Mhz
+  rd_speed = min(12000000U, rd_speed);
 #endif
 
   _trans->setClockSpeed(wr_speed, rd_speed);
@@ -182,19 +237,40 @@ bool Adafruit_SPIFlashBase::begin(SPIFlash_Device_t const *flash_devs,
       writeEnable();
 
       uint8_t full_status[2] = {0x00, _flash_dev->quad_enable_bit_mask};
-
-      if (_flash_dev->write_status_register_split) {
-        _trans->writeCommand(SFLASH_CMD_WRITE_STATUS2, full_status + 1, 1);
-      } else if (_flash_dev->single_status_byte) {
-        _trans->writeCommand(SFLASH_CMD_WRITE_STATUS, full_status + 1, 1);
-      } else {
-        _trans->writeCommand(SFLASH_CMD_WRITE_STATUS, full_status, 2);
-      }
+      write_status_register(full_status);
     }
   } else {
+    /*
+     * Most of QSPI flash memory ICs have non-volatile QE bit in a status
+     * register. If it was set once - we need to apply a separate procedure to
+     * clear it off when the device is connected to a non-QSPI capable bus or it
+     * has _flash_dev->supports_qspi setting in 'false' state
+     */
+    // Disable Quad Mode if not available
+    if (!_trans->supportQuadMode() || !_flash_dev->supports_qspi) {
+      // Verify that QSPI mode is not enabled.
+      uint8_t status =
+          _flash_dev->single_status_byte ? readStatus() : readStatus2();
+
+      // Check the quad enable bit.
+      if ((status & _flash_dev->quad_enable_bit_mask) != 0) {
+        writeEnable();
+
+        uint8_t full_status[2] = {0x00, 0x00};
+        write_status_register(full_status);
+      }
+    }
+
     // Single mode, use fast read if supported
     if (_flash_dev->supports_fast_read) {
-      _trans->setReadCommand(SFLASH_CMD_FAST_READ);
+      if (_trans->supportQuadMode() && !_flash_dev->supports_qspi) {
+        /* Re-init QSPI with READOC_FASTREAD and WRITEOC_PP */
+        _trans->end();
+        _trans->setReadCommand(SFLASH_CMD_FAST_READ);
+        _trans->begin();
+      } else {
+        _trans->setReadCommand(SFLASH_CMD_FAST_READ);
+      }
     }
   }
 
@@ -224,7 +300,20 @@ bool Adafruit_SPIFlashBase::begin(SPIFlash_Device_t const *flash_devs,
   writeDisable();
   waitUntilReady();
 
-#endif // CONFIG_IDF_TARGET_ESP32S2
+  return true;
+}
+
+#endif // ARDUINO_ARCH_ESP32
+
+bool Adafruit_SPIFlashBase::end(void) {
+
+  if (_trans == NULL) {
+    return false;
+  }
+
+  _trans->end();
+
+  _flash_dev = NULL;
 
   return true;
 }
@@ -335,8 +424,9 @@ bool Adafruit_SPIFlashBase::eraseBlock(uint32_t blockNumber) {
 }
 
 bool Adafruit_SPIFlashBase::eraseChip(void) {
-  if (!_flash_dev)
+  if (!_flash_dev) {
     return false;
+  }
 
   // skip erase for fram
   if (_flash_dev->is_fram) {

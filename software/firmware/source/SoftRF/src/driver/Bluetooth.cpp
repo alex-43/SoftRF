@@ -1,6 +1,6 @@
 /*
  * BluetoothHelper.cpp
- * Copyright (C) 2018-2021 Linar Yusupov
+ * Copyright (C) 2018-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,8 +15,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#if defined(ESP32)
 
+#if defined(ESP32)
+#include "sdkconfig.h"
+#endif
+
+#if defined(ESP32) && !defined(CONFIG_IDF_TARGET_ESP32S2)
 #include "../system/SoC.h"
 #include "EEPROM.h"
 #include "Bluetooth.h"
@@ -43,26 +47,32 @@
 #include "WiFi.h"   // HOSTNAME
 #include "Battery.h"
 
+#include <core_version.h>
+
 BLEServer* pServer = NULL;
 BLECharacteristic* pUARTCharacteristic = NULL;
 BLECharacteristic* pBATCharacteristic  = NULL;
+
+BLECharacteristic* pModelCharacteristic         = NULL;
+BLECharacteristic* pSerialCharacteristic        = NULL;
+BLECharacteristic* pFirmwareCharacteristic      = NULL;
+BLECharacteristic* pHardwareCharacteristic      = NULL;
+BLECharacteristic* pSoftwareCharacteristic      = NULL;
+BLECharacteristic* pManufacturerCharacteristic  = NULL;
+
 bool deviceConnected    = false;
 bool oldDeviceConnected = false;
 
 #if defined(USE_BLE_MIDI)
 BLECharacteristic* pMIDICharacteristic = NULL;
-
-uint8_t midiPacket[] = {
-   0x80,  // header
-   0x80,  // timestamp, not implemented
-   0x00,  // status
-   0x3c,  // 0x3c == 60 == middle c
-   0x00   // velocity
-};
 #endif /* USE_BLE_MIDI */
 
 cbuf *BLE_FIFO_RX, *BLE_FIFO_TX;
+
+#if !defined(CONFIG_IDF_TARGET_ESP32S3)
 BluetoothSerial SerialBT;
+#endif /* CONFIG_IDF_TARGET_ESP32S3 */
+
 String BT_name = HOSTNAME;
 
 static unsigned long BLE_Notify_TimeMarker = 0;
@@ -93,62 +103,14 @@ class UARTCallbacks: public BLECharacteristicCallbacks {
     }
 };
 
-#if defined(USE_BLE_MIDI)
-
-byte note_sequence[] = {62,65,69,65,67,67,65,64,69,69,67,67,62,62};
-
-void ESP32_BLEMIDI_test()
-{
-  if ((settings->bluetooth == BLUETOOTH_LE_HM10_SERIAL) && deviceConnected) {
-
-    unsigned int position = 0;
-    unsigned int current  = 0;
-
-    for (; position <= sizeof(note_sequence); position++) {
-      // Setup variables for the current and previous
-      // positions in the note sequence.
-      current = position;
-      // If we currently are at position 0, set the
-      // previous position to the last note in the sequence.
-      unsigned int previous = (current == 0) ? (sizeof(note_sequence)-1) : current - 1;
-
-      // Send Note On for current position at full velocity (127) on channel 1.
-      // note down
-      midiPacket[2] = 0x90; // note down, channel 0
-      midiPacket[3] = note_sequence[current];
-      midiPacket[4] = 127;  // velocity
-      pMIDICharacteristic->setValue(midiPacket, 5); // packet, length in bytes
-      pMIDICharacteristic->notify();
-
-      // Send Note Off for previous note.
-      // note up
-      midiPacket[2] = 0x80; // note up, channel 0
-      midiPacket[3] = note_sequence[previous];
-      midiPacket[4] = 0;    // velocity
-      pMIDICharacteristic->setValue(midiPacket, 5); // packet, length in bytes)
-      pMIDICharacteristic->notify();
-
-      // play note for 286ms
-      delay(286);
-    }
-
-    // note up
-    midiPacket[2] = 0x80; // note up, channel 0
-    midiPacket[3] = note_sequence[current];
-    midiPacket[4] = 0;    // velocity
-    pMIDICharacteristic->setValue(midiPacket, 5); // packet, length in bytes)
-    pMIDICharacteristic->notify();
-  }
-}
-#endif /* USE_BLE_MIDI */
-
 static void ESP32_Bluetooth_setup()
 {
-
+  BT_name += "-";
   BT_name += String(SoC->getChipId() & 0x00FFFFFFU, HEX);
 
   switch(settings->bluetooth)
   {
+#if !defined(CONFIG_IDF_TARGET_ESP32S3)
   case BLUETOOTH_SPP:
     {
       esp_bt_controller_mem_release(ESP_BT_MODE_BLE);
@@ -156,12 +118,15 @@ static void ESP32_Bluetooth_setup()
       SerialBT.begin(BT_name.c_str());
     }
     break;
+#endif /* CONFIG_IDF_TARGET_ESP32S3 */
   case BLUETOOTH_LE_HM10_SERIAL:
     {
       BLE_FIFO_RX = new cbuf(BLE_FIFO_RX_SIZE);
       BLE_FIFO_TX = new cbuf(BLE_FIFO_TX_SIZE);
 
+#if !defined(CONFIG_IDF_TARGET_ESP32S3)
       esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
+#endif /* CONFIG_IDF_TARGET_ESP32S3 */
 
       // Create the BLE Device
       BLEDevice::init((BT_name+"-LE").c_str());
@@ -206,6 +171,60 @@ static void ESP32_Bluetooth_setup()
                               BLECharacteristic::PROPERTY_NOTIFY
                             );
       pBATCharacteristic->addDescriptor(new BLE2902());
+
+      // Start the service
+      pService->start();
+
+      // Create the BLE Service
+      pService = pServer->createService(BLEUUID(UUID16_SVC_DEVICE_INFORMATION));
+
+      // Create BLE Characteristics
+      pModelCharacteristic = pService->createCharacteristic(
+                              BLEUUID(UUID16_CHR_MODEL_NUMBER_STRING),
+                              BLECharacteristic::PROPERTY_READ
+                            );
+      pSerialCharacteristic = pService->createCharacteristic(
+                              BLEUUID(UUID16_CHR_SERIAL_NUMBER_STRING),
+                              BLECharacteristic::PROPERTY_READ
+                            );
+      pFirmwareCharacteristic = pService->createCharacteristic(
+                              BLEUUID(UUID16_CHR_FIRMWARE_REVISION_STRING),
+                              BLECharacteristic::PROPERTY_READ
+                            );
+      pHardwareCharacteristic = pService->createCharacteristic(
+                              BLEUUID(UUID16_CHR_HARDWARE_REVISION_STRING),
+                              BLECharacteristic::PROPERTY_READ
+                            );
+      pSoftwareCharacteristic = pService->createCharacteristic(
+                              BLEUUID(UUID16_CHR_SOFTWARE_REVISION_STRING),
+                              BLECharacteristic::PROPERTY_READ
+                            );
+      pManufacturerCharacteristic = pService->createCharacteristic(
+                              BLEUUID(UUID16_CHR_MANUFACTURER_NAME_STRING),
+                              BLECharacteristic::PROPERTY_READ
+                            );
+
+      const char *Model         = hw_info.model == SOFTRF_MODEL_STANDALONE ? "Standalone Edition" :
+                                  hw_info.model == SOFTRF_MODEL_PRIME_MK2  ? "Prime Mark II"      :
+                                  hw_info.model == SOFTRF_MODEL_PRIME_MK3  ? "Prime Mark III"     :
+                                  "Unknown";
+      char SerialNum[9];
+      snprintf(SerialNum, sizeof(SerialNum), "%08X", SoC->getChipId());
+
+      const char *Firmware      = "Arduino Core ESP32 " ARDUINO_ESP32_RELEASE;
+
+      char Hardware[9];
+      snprintf(Hardware, sizeof(Hardware), "%08X", hw_info.revision);
+
+      const char *Manufacturer  = SOFTRF_IDENT;
+      const char *Software      = SOFTRF_FIRMWARE_VERSION;
+
+      pModelCharacteristic->       setValue((uint8_t *) Model,        strlen(Model));
+      pSerialCharacteristic->      setValue((uint8_t *) SerialNum,    strlen(SerialNum));
+      pFirmwareCharacteristic->    setValue((uint8_t *) Firmware,     strlen(Firmware));
+      pHardwareCharacteristic->    setValue((uint8_t *) Hardware,     strlen(Hardware));
+      pSoftwareCharacteristic->    setValue((uint8_t *) Software,     strlen(Software));
+      pManufacturerCharacteristic->setValue((uint8_t *) Manufacturer, strlen(Manufacturer));
 
       // Start the service
       pService->start();
@@ -269,13 +288,16 @@ static void ESP32_Bluetooth_loop()
       if (deviceConnected && (millis() - BLE_Notify_TimeMarker > 10)) { /* < 18000 baud */
 
           uint8_t chunk[BLE_MAX_WRITE_CHUNK_SIZE];
-          size_t size = (BLE_FIFO_TX->available() < BLE_MAX_WRITE_CHUNK_SIZE ?
-                         BLE_FIFO_TX->available() : BLE_MAX_WRITE_CHUNK_SIZE);
+          size_t size = BLE_FIFO_TX->available();
+          size = size < BLE_MAX_WRITE_CHUNK_SIZE ? size : BLE_MAX_WRITE_CHUNK_SIZE;
 
-          BLE_FIFO_TX->read((char *) chunk, size);
+          if (size > 0) {
+            BLE_FIFO_TX->read((char *) chunk, size);
 
-          pUARTCharacteristic->setValue(chunk, size);
-          pUARTCharacteristic->notify();
+            pUARTCharacteristic->setValue(chunk, size);
+            pUARTCharacteristic->notify();
+          }
+
           BLE_Notify_TimeMarker = millis();
       }
       // disconnecting
@@ -317,9 +339,11 @@ static int ESP32_Bluetooth_available()
 
   switch(settings->bluetooth)
   {
+#if !defined(CONFIG_IDF_TARGET_ESP32S3)
   case BLUETOOTH_SPP:
     rval = SerialBT.available();
     break;
+#endif /* CONFIG_IDF_TARGET_ESP32S3 */
   case BLUETOOTH_LE_HM10_SERIAL:
     rval = BLE_FIFO_RX->available();
     break;
@@ -338,9 +362,11 @@ static int ESP32_Bluetooth_read()
 
   switch(settings->bluetooth)
   {
+#if !defined(CONFIG_IDF_TARGET_ESP32S3)
   case BLUETOOTH_SPP:
     rval = SerialBT.read();
     break;
+#endif /* CONFIG_IDF_TARGET_ESP32S3 */
   case BLUETOOTH_LE_HM10_SERIAL:
     rval = BLE_FIFO_RX->read();
     break;
@@ -359,9 +385,11 @@ static size_t ESP32_Bluetooth_write(const uint8_t *buffer, size_t size)
 
   switch(settings->bluetooth)
   {
+#if !defined(CONFIG_IDF_TARGET_ESP32S3)
   case BLUETOOTH_SPP:
     rval = SerialBT.write(buffer, size);
     break;
+#endif /* CONFIG_IDF_TARGET_ESP32S3 */
   case BLUETOOTH_LE_HM10_SERIAL:
     rval = BLE_FIFO_TX->write((char *) buffer,
                         (BLE_FIFO_TX->room() > size ? size : BLE_FIFO_TX->room()));
@@ -1064,6 +1092,162 @@ static void bt_app_av_state_disconnecting(uint16_t event, void *param)
 #include "../system/SoC.h"
 #include "Bluetooth.h"
 
+#include <bluefruit.h>
+#include <Adafruit_LittleFS.h>
+#include <InternalFileSystem.h>
+#include <BLEUart_HM10.h>
+#include <TinyGPS++.h>
+#if defined(USE_BLE_MIDI)
+#include <MIDI.h>
+#endif /* USE_BLE_MIDI */
+
+#include "WiFi.h"   // HOSTNAME
+#include "Battery.h"
+#include "GNSS.h"
+#include "RF.h"
+#include "../protocol/radio/Legacy.h"
+#include "Baro.h"
+#include "EEPROM.h"
+#include "Sound.h"
+#include "../protocol/data/NMEA.h"
+#include "../protocol/data/GDL90.h"
+#include "../protocol/data/D1090.h"
+
+/*
+ * SensorBox Serivce: aba27100-143b-4b81-a444-edcd0000f020
+ * Navigation       : aba27100-143b-4b81-a444-edcd0000f022
+ * Movement         : aba27100-143b-4b81-a444-edcd0000f023
+ * GPS2             : aba27100-143b-4b81-a444-edcd0000f024
+ * System           : aba27100-143b-4b81-a444-edcd0000f025
+ */
+
+const uint8_t SENSBOX_UUID_SERVICE[] =
+{
+    0x20, 0xF0, 0x00, 0x00, 0xCD, 0xED, 0x44, 0xA4,
+    0x81, 0x4B, 0x3B, 0x14, 0x00, 0x71, 0xA2, 0xAB,
+};
+
+const uint8_t SENSBOX_UUID_NAVIGATION[] =
+{
+    0x22, 0xF0, 0x00, 0x00, 0xCD, 0xED, 0x44, 0xA4,
+    0x81, 0x4B, 0x3B, 0x14, 0x00, 0x71, 0xA2, 0xAB,
+};
+
+const uint8_t SENSBOX_UUID_MOVEMENT[] =
+{
+    0x23, 0xF0, 0x00, 0x00, 0xCD, 0xED, 0x44, 0xA4,
+    0x81, 0x4B, 0x3B, 0x14, 0x00, 0x71, 0xA2, 0xAB,
+};
+
+const uint8_t SENSBOX_UUID_GPS2[] =
+{
+    0x24, 0xF0, 0x00, 0x00, 0xCD, 0xED, 0x44, 0xA4,
+    0x81, 0x4B, 0x3B, 0x14, 0x00, 0x71, 0xA2, 0xAB,
+};
+
+const uint8_t SENSBOX_UUID_SYSTEM[] =
+{
+    0x25, 0xF0, 0x00, 0x00, 0xCD, 0xED, 0x44, 0xA4,
+    0x81, 0x4B, 0x3B, 0x14, 0x00, 0x71, 0xA2, 0xAB,
+};
+
+BLESensBox::BLESensBox(void) :
+  BLEService   (SENSBOX_UUID_SERVICE),
+  _sensbox_nav (SENSBOX_UUID_NAVIGATION),
+  _sensbox_move(SENSBOX_UUID_MOVEMENT),
+  _sensbox_gps2(SENSBOX_UUID_GPS2),
+  _sensbox_sys (SENSBOX_UUID_SYSTEM)
+{
+
+}
+
+err_t BLESensBox::begin(void)
+{
+  VERIFY_STATUS( BLEService::begin() );
+
+  _sensbox_nav.setProperties(CHR_PROPS_NOTIFY);
+  _sensbox_nav.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+  _sensbox_nav.setFixedLen(sizeof(sensbox_navigation_t));
+  _sensbox_move.setProperties(CHR_PROPS_NOTIFY);
+  _sensbox_move.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+  _sensbox_move.setFixedLen(sizeof(sensbox_movement_t));
+  _sensbox_gps2.setProperties(CHR_PROPS_NOTIFY);
+  _sensbox_gps2.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+  _sensbox_gps2.setFixedLen(sizeof(sensbox_gps2_t));
+  _sensbox_sys.setProperties(CHR_PROPS_NOTIFY);
+  _sensbox_sys.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+  _sensbox_sys.setFixedLen(sizeof(sensbox_system_t));
+  VERIFY_STATUS( _sensbox_nav.begin()  );
+  VERIFY_STATUS( _sensbox_move.begin() );
+  VERIFY_STATUS( _sensbox_gps2.begin() );
+  VERIFY_STATUS( _sensbox_sys.begin()  );
+
+  return ERROR_NONE;
+}
+
+bool BLESensBox::notify_nav(uint8_t status)
+{
+  if (!_sensbox_nav.notifyEnabled(Bluefruit.connHandle()))
+    return false;
+
+  sensbox_navigation_t data = {0};
+
+  data.timestamp = ThisAircraft.timestamp;
+  data.lat       = (int32_t) (ThisAircraft.latitude  * 10000000);
+  data.lon       = (int32_t) (ThisAircraft.longitude * 10000000);
+  data.gnss_alt  = (int16_t) ThisAircraft.altitude;
+  data.pres_alt  = (int16_t) ThisAircraft.pressure_altitude;
+  data.status    = status;
+
+  return _sensbox_nav.notify(&data, sizeof(sensbox_navigation_t)) > 0;
+}
+
+bool BLESensBox::notify_move(uint8_t status)
+{
+  if (!_sensbox_move.notifyEnabled(Bluefruit.connHandle()))
+    return false;
+
+  sensbox_movement_t data = {0};
+
+  data.pres_alt  = (int32_t) (ThisAircraft.pressure_altitude * 100);
+  data.vario     = (int16_t) ((ThisAircraft.vs * 10) / (_GPS_FEET_PER_METER * 6));
+  data.gs        = (int16_t) (ThisAircraft.speed  * _GPS_MPS_PER_KNOT * 10);
+  data.cog       = (int16_t) (ThisAircraft.course * 10);
+  data.status    = status;
+
+  return _sensbox_move.notify(&data, sizeof(sensbox_movement_t)) > 0;
+}
+
+bool BLESensBox::notify_gps2(uint8_t status)
+{
+  if (!_sensbox_gps2.notifyEnabled(Bluefruit.connHandle()))
+    return false;
+
+  sensbox_gps2_t data = {0};
+
+  data.sats      = (uint8_t) gnss.satellites.value();
+  data.status    = status;
+
+  return _sensbox_gps2.notify(&data, sizeof(sensbox_gps2_t)) > 0;
+}
+
+bool BLESensBox::notify_sys(uint8_t status)
+{
+  if (!_sensbox_sys.notifyEnabled(Bluefruit.connHandle()))
+    return false;
+
+  sensbox_system_t data = {0};
+
+  data.battery   = (uint8_t) Battery_charge();
+  data.temp      = (int16_t) (Baro_temperature() * 10);
+  data.status    = status;
+
+  return _sensbox_sys.notify(&data, sizeof(sensbox_system_t)) > 0;
+}
+
+static unsigned long BLE_Notify_TimeMarker  = 0;
+static unsigned long BLE_SensBox_TimeMarker = 0;
+
 /*********************************************************************
  This is an example for our nRF52 based Bluefruit LE modules
 
@@ -1077,16 +1261,6 @@ static void bt_app_av_state_disconnecting(uint16_t event, void *param)
  All text above, and the splash screen below must be included in
  any redistribution
 *********************************************************************/
-#include <bluefruit.h>
-#include <Adafruit_LittleFS.h>
-#include <InternalFileSystem.h>
-#include <BLEUart_HM10.h>
-#if defined(USE_BLE_MIDI) || defined(USE_USB_MIDI)
-#include <MIDI.h>
-#endif /* USE_BLE_MIDI */
-
-#include "WiFi.h"   // HOSTNAME
-#include "Battery.h"
 
 // BLE Service
 BLEDfu        bledfu;       // OTA DFU service
@@ -1096,32 +1270,67 @@ BLEUart_HM10  bleuart_HM10; // TI UART over BLE
 BLEUart       bleuart_NUS;  // Nordic UART over BLE
 #endif /* EXCLUDE_NUS */
 BLEBas        blebas;       // battery
+BLESensBox    blesens;      // SensBox
 
-#if defined(USE_BLE_MIDI) && !defined(USE_USB_MIDI)
+#if defined(USE_BLE_MIDI)
 BLEMidi       blemidi;
 
-MIDI_CREATE_BLE_INSTANCE(blemidi);
+MIDI_CREATE_INSTANCE(BLEMidi, blemidi, MIDI_BLE);
 #endif /* USE_BLE_MIDI */
 
 String BT_name = HOSTNAME;
 
+#define UUID16_COMPANY_ID_NORDIC 0x0059
+
+static uint8_t BeaconUuid[16] =
+{
+ /* https://openuuid.net: becf4a85-29b8-476e-928f-fce11f303344 */
+  0xbe, 0xcf, 0x4a, 0x85, 0x29, 0xb8, 0x47, 0x6e,
+  0x92, 0x8f, 0xfc, 0xe1, 0x1f, 0x30, 0x33, 0x44
+};
+
+// UUID, Major, Minor, RSSI @ 1M
+BLEBeacon iBeacon(BeaconUuid, 0x0102, 0x0304, -64);
+
 void startAdv(void)
 {
+  bool no_data = (settings->nmea_out != NMEA_BLUETOOTH  &&
+                  settings->gdl90    != GDL90_BLUETOOTH &&
+                  settings->d1090    != D1090_BLUETOOTH);
+
   // Advertising packet
-  Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
-  Bluefruit.Advertising.addTxPower();
 
-  // Include bleuart 128-bit uuid
-#if !defined(EXCLUDE_NUS)
-  Bluefruit.Advertising.addService(bleuart_NUS, bleuart_HM10);
-#else
-  Bluefruit.Advertising.addService(bleuart_HM10);
-#endif /* EXCLUDE_NUS */
+#if defined(USE_IBEACON)
+  if (no_data && settings->volume == BUZZER_OFF) {
+    uint32_t id = SoC->getChipId();
+    uint16_t major = (id >> 16) & 0x0000FFFF;
+    uint16_t minor = (id      ) & 0x0000FFFF;
 
-#if defined(USE_BLE_MIDI) && !defined(USE_USB_MIDI)
-  // Advertise BLE MIDI Service
-  Bluefruit.Advertising.addService(blemidi);
+    // Manufacturer ID is required for Manufacturer Specific Data
+    iBeacon.setManufacturer(UUID16_COMPANY_ID_NORDIC);
+    iBeacon.setMajorMinor(major, minor);
+
+    // Set the beacon payload using the BLEBeacon class
+    Bluefruit.Advertising.setBeacon(iBeacon);
+  } else
+#endif /* USE_IBEACON */
+  {
+    Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+    Bluefruit.Advertising.addTxPower();
+
+#if defined(USE_BLE_MIDI)
+    if (settings->volume != BUZZER_OFF) {
+      Bluefruit.Advertising.addService(blemidi, bleuart_HM10);
+    } else
 #endif /* USE_BLE_MIDI */
+    {
+      Bluefruit.Advertising.addService(
+#if !defined(EXCLUDE_NUS)
+                                       bleuart_NUS,
+#endif /* EXCLUDE_NUS */
+                                       bleuart_HM10);
+    }
+  }
 
   // Secondary Scan Response packet (optional)
   // Since there is no room for 'Name' in Advertising packet
@@ -1175,6 +1384,7 @@ void disconnect_callback(uint16_t conn_handle, uint8_t reason)
 
 void nRF52_Bluetooth_setup()
 {
+  BT_name += "-";
   BT_name += String(SoC->getChipId() & 0x00FFFFFFU, HEX);
 
   // Setup the BLE LED to be enabled on CONNECT
@@ -1197,10 +1407,10 @@ void nRF52_Bluetooth_setup()
   bledfu.begin();
 
   // Configure and Start Device Information Service
-  bledis.setManufacturer("SoftRF");
-  bledis.setModel("Badge Edition");
-  bledis.setHardwareRev(hw_info.revision == 0 ? "2020-8-6"   :
-                        hw_info.revision == 1 ? "2020-12-12" : "2021-3-16");
+  bledis.setManufacturer(nRF52_Device_Manufacturer);
+  bledis.setModel(nRF52_Device_Model);
+  bledis.setHardwareRev(hw_info.revision > 2 ?
+                        Hardware_Rev[3] : Hardware_Rev[hw_info.revision]);
   bledis.setSoftwareRev(SOFTRF_FIRMWARE_VERSION);
   bledis.begin();
 
@@ -1215,10 +1425,13 @@ void nRF52_Bluetooth_setup()
   blebas.begin();
   blebas.write(100);
 
-#if defined(USE_BLE_MIDI) && !defined(USE_USB_MIDI)
+  // Start SensBox Service
+  blesens.begin();
+
+#if defined(USE_BLE_MIDI)
   // Initialize MIDI with no any input channels
   // This will also call blemidi service's begin()
-  MIDI.begin(MIDI_CHANNEL_OFF);
+  MIDI_BLE.begin(MIDI_CHANNEL_OFF);
 #endif /* USE_BLE_MIDI */
 
   // Set up and start advertising
@@ -1228,49 +1441,14 @@ void nRF52_Bluetooth_setup()
   Serial.println("Please use Adafruit's Bluefruit LE app to connect in UART mode");
   Serial.println("Once connected, enter character(s) that you wish to send");
 #endif
+
+  BLE_Notify_TimeMarker  = millis();
+  BLE_SensBox_TimeMarker = millis();
 }
 
 /*********************************************************************
  End of Adafruit licensed text
 *********************************************************************/
-
-static unsigned long BLE_Notify_TimeMarker = 0;
-
-#if defined(USE_BLE_MIDI) && !defined(USE_USB_MIDI)
-
-#define MIDI_CHANNEL_TRAFFIC  1
-#define MIDI_CHANNEL_VARIO    2
-
-byte note_sequence[] = {62,65,69,65,67,67,65,64,69,69,67,67,62,62};
-
-void nRF52_BLEMIDI_test()
-{
-  // Don't continue if we aren't connected.
-  if (Bluefruit.connected() && blemidi.notifyEnabled()) {
-    unsigned int position = 0;
-    unsigned int current  = 0;
-
-    for (; position <= sizeof(note_sequence); position++) {
-      // Setup variables for the current and previous
-      // positions in the note sequence.
-      current = position;
-      // If we currently are at position 0, set the
-      // previous position to the last note in the sequence.
-      unsigned int previous = (current == 0) ? (sizeof(note_sequence)-1) : current - 1;
-
-      // Send Note On for current position at full velocity (127) on channel 1.
-      MIDI.sendNoteOn(note_sequence[current], 127, MIDI_CHANNEL_TRAFFIC);
-
-      // Send Note Off for previous note.
-      MIDI.sendNoteOff(note_sequence[previous], 0, MIDI_CHANNEL_TRAFFIC);
-
-      delay(286);
-    }
-
-    MIDI.sendNoteOff(note_sequence[current], 0, MIDI_CHANNEL_TRAFFIC);
-  }
-}
-#endif /* USE_BLE_MIDI */
 
 static void nRF52_Bluetooth_loop()
 {
@@ -1286,6 +1464,15 @@ static void nRF52_Bluetooth_loop()
 
   if (isTimeToBattery()) {
     blebas.write(Battery_charge());
+  }
+
+  if (Bluefruit.connected() && isTimeToSensBox()) {
+    uint8_t sens_status = isValidFix() ? GNSS_STATUS_3D_MOVING : GNSS_STATUS_NONE;
+    blesens.notify_nav (sens_status);
+    blesens.notify_move(sens_status);
+    blesens.notify_gps2(sens_status);
+    blesens.notify_sys (sens_status);
+    BLE_SensBox_TimeMarker = millis();
   }
 }
 
@@ -1368,12 +1555,12 @@ static size_t nRF52_Bluetooth_write(const uint8_t *buffer, size_t size)
   }
 
   /* Give priority to HM-10 output */
-  if ( bleuart_HM10.notifyEnabled() ) {
+  if ( bleuart_HM10.notifyEnabled() && size > 0) {
     return bleuart_HM10.write(buffer, size);
   }
 
 #if !defined(EXCLUDE_NUS)
-  if ( bleuart_NUS.notifyEnabled() ) {
+  if ( bleuart_NUS.notifyEnabled() && size > 0) {
     rval = bleuart_NUS.write(buffer, size);
   }
 #endif /* EXCLUDE_NUS */

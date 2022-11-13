@@ -1,6 +1,6 @@
 /*
  * SkyView.h
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,6 +50,7 @@ typedef struct hardware_info {
 
 enum
 {
+	SOFTRF_MODEL_UNKNOWN,
 	SOFTRF_MODEL_STANDALONE,
 	SOFTRF_MODEL_PRIME,
 	SOFTRF_MODEL_UAV,
@@ -60,10 +61,18 @@ enum
 	SOFTRF_MODEL_RETRO,
 	SOFTRF_MODEL_SKYWATCH,
 	SOFTRF_MODEL_DONGLE,
-	SOFTRF_MODEL_MULTI,
+	SOFTRF_MODEL_OCTAVE,
 	SOFTRF_MODEL_UNI,
+	SOFTRF_MODEL_WEBTOP_SERIAL,
 	SOFTRF_MODEL_MINI,
-	SOFTRF_MODEL_BADGE
+	SOFTRF_MODEL_BADGE,
+	SOFTRF_MODEL_ES,
+	SOFTRF_MODEL_BRACELET,
+	SOFTRF_MODEL_ACADEMY,
+	SOFTRF_MODEL_LEGO,
+	SOFTRF_MODEL_WEBTOP_USB,
+	SOFTRF_MODEL_PRIME_MK3,
+	SOFTRF_MODEL_BALKAN,
 };
 
 enum

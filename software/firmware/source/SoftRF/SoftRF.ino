@@ -1,6 +1,6 @@
 /*
  * SoftRF(.ino) firmware
- * Copyright (C) 2016-2021 Linar Yusupov
+ * Copyright (C) 2016-2022 Linar Yusupov
  *
  * Author: Linar Yusupov, linar.r.yusupov@gmail.com
  *
@@ -38,13 +38,13 @@
  *   EasyLink library is developed by Robert Wessels and Tony Cave
  *   Dump978 library is developed by Oliver Jowett
  *   FEC library is developed by Phil Karn
- *   AXP202X library is developed by Lewis He
+ *   PCF8563, AXP20X, XPowersLib and SensorsLib libraries are developed by Lewis He
  *   Arduino Core for STM32 is developed by Frederic Pillon
  *   TFT library is developed by Bodmer
  *   STM32duino Low Power and RTC libraries are developed by Wi6Labs
  *   Basic MAC library is developed by Michael Kuyper
  *   LowPowerLab SPIFlash library is maintained by Felix Rusu
- *   Arduino core for ASR650x is developed by Aaron Lee (HelTec Automation)
+ *   Arduino Core for ASR6x0x is developed by Aaron Lee (HelTec Automation)
  *   ADXL362 library is developed by Anne Mahaffey
  *   Arduino Core for nRF52 and TinyUSB library are developed by Ha Thach
  *   Arduino-NVM library is developed by Frank Holtz
@@ -55,6 +55,12 @@
  *   Adafruit SPIFlash and SleepyDog libraries are developed by Adafruit Industries
  *   SdFat library is developed by Bill Greiman
  *   Arduino MIDI library is developed by Francois Best (Forty Seven Effects)
+ *   Arduino uCDB library is developed by Ioulianos Kakoulidis
+ *   Arduino Core for Atmel SAMD and FlashStorage library are developed by Arduino LLC
+ *   USB host library 2.0 for Zero/M0/SAMD is developed by gdsports625@gmail.com
+ *   EspTinyUSB library is developed by Dariusz Krempa <esp32@esp32.eu.org>
+ *   Arduino Core for Raspberry Pi RP2040 is developed by Earle Philhower
+ *   MPU-9250 9 DoF sensor library is developed by Kris Winer and Hideaki Tai
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -97,6 +103,10 @@
 #include "src/system/Log.h"
 #endif /* LOGGER_IS_ENABLED */
 
+#if !defined(SERIAL_FLUSH)
+#define SERIAL_FLUSH() Serial.flush()
+#endif
+
 #define DEBUG 0
 #define DEBUG_TIMING 0
 
@@ -112,7 +122,12 @@ hardware_info_t hw_info = {
   .rf       = RF_IC_NONE,
   .gnss     = GNSS_MODULE_NONE,
   .baro     = BARO_MODULE_NONE,
-  .display  = DISPLAY_NONE
+  .display  = DISPLAY_NONE,
+  .storage  = STORAGE_NONE,
+  .rtc      = RTC_NONE,
+  .imu      = IMU_NONE,
+  .mag      = MAG_NONE,
+  .pmu      = PMU_NONE,
 };
 
 unsigned long LEDTimeMarker = 0;
@@ -126,26 +141,18 @@ void setup()
 
   resetInfo = (rst_info *) SoC->getResetInfoPtr();
 
-  Serial.begin(SERIAL_OUT_BR, SERIAL_OUT_BITS);
-
-#if defined(USBD_USE_CDC) && !defined(DISABLE_GENERIC_SERIALUSB)
-  /* Let host's USB and console drivers to warm-up */
-  delay(2000);
-#elif defined(USE_TINYUSB) && defined(USBCON)
-  for (int i=0; i < 20; i++) {if (Serial) break; else delay(100);}
-#endif
-
 #if LOGGER_IS_ENABLED
   Logger_setup();
 #endif /* LOGGER_IS_ENABLED */
 
   Serial.println();
-  Serial.print(F(SOFTRF_IDENT));
+  Serial.print(F(SOFTRF_IDENT "-"));
   Serial.print(SoC->name);
   Serial.print(F(" FW.REV: " SOFTRF_FIRMWARE_VERSION " DEV.ID: "));
   Serial.println(String(SoC->getChipId(), HEX));
-  Serial.println(F("Copyright (C) 2015-2021 Linar Yusupov. All rights reserved."));
-  Serial.flush();
+  Serial.println(F("Copyright (C) 2015-2022 Linar Yusupov. All rights reserved."));
+
+  SERIAL_FLUSH();
 
   if (resetInfo) {
     Serial.println(""); Serial.print(F("Reset reason: ")); Serial.println(resetInfo->reason);
@@ -153,6 +160,8 @@ void setup()
   Serial.println(SoC->getResetReason());
   Serial.print(F("Free heap size: ")); Serial.println(SoC->getFreeHeap());
   Serial.println(SoC->getResetInfo()); Serial.println("");
+
+  SERIAL_FLUSH();
 
   EEPROM_setup();
 
@@ -166,7 +175,7 @@ void setup()
 
   hw_info.baro = Baro_setup();
 #if defined(ENABLE_AHRS)
-  hw_info.ahrs = AHRS_setup();
+  hw_info.imu = AHRS_setup();
 #endif /* ENABLE_AHRS */
   hw_info.display = SoC->Display_setup();
 
@@ -310,12 +319,7 @@ void loop()
 
   SoC->Button_loop();
 
-#if defined(TAKE_CARE_OF_MILLIS_ROLLOVER)
-  /* restart the device when uptime is more than 47 days */
-  if (millis() > (47 * 24 * 3600 * 1000UL)) {
-    SoC->reset();
-  }
-#endif /* TAKE_CARE_OF_MILLIS_ROLLOVER */
+  Time_loop();
 
   yield();
 }
@@ -347,6 +351,8 @@ void shutdown(int reason)
   }
 
   SoC->Display_fini(reason);
+
+  Baro_fini();
 
   RF_Shutdown();
 
@@ -424,10 +430,8 @@ void normal()
   if (isTimeToExport()) {
     NMEA_Export();
     GDL90_Export();
+    D1090_Export();
 
-    if (isValidFix()) {
-      D1090_Export();
-    }
     ExportTimeMarker = millis();
   }
 

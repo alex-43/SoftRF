@@ -1,6 +1,6 @@
 /*
  * TrafficHelper.cpp
- * Copyright (C) 2018-2021 Linar Yusupov
+ * Copyright (C) 2018-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -136,6 +136,53 @@ void Traffic_Update(ufo_t *fop)
   }
 }
 
+bool Traffic_Add(ufo_t *fop)
+{
+  int i;
+
+  for (i=0; i < MAX_TRACKING_OBJECTS; i++) {
+    if (Container[i].addr == fo.addr) {
+      uint8_t alert_bak = Container[i].alert;
+      Container[i] = fo;
+      Container[i].alert = alert_bak;
+      return true;
+    }
+  }
+
+  int max_dist_ndx = 0;
+  int min_level_ndx = 0;
+
+  for (i=0; i < MAX_TRACKING_OBJECTS; i++) {
+    if (now() - Container[i].timestamp > ENTRY_EXPIRATION_TIME) {
+      Container[i] = fo;
+      return true;
+    }
+#if !defined(EXCLUDE_TRAFFIC_FILTER_EXTENSION)
+    if  (Container[i].distance > Container[max_dist_ndx].distance)  {
+      max_dist_ndx = i;
+    }
+    if  (Container[i].alarm_level < Container[min_level_ndx].alarm_level)  {
+      min_level_ndx = i;
+    }
+#endif /* EXCLUDE_TRAFFIC_FILTER_EXTENSION */
+  }
+
+#if !defined(EXCLUDE_TRAFFIC_FILTER_EXTENSION)
+  if (fo.alarm_level > Container[min_level_ndx].alarm_level) {
+    Container[min_level_ndx] = fo;
+    return true;
+  }
+
+  if (fo.distance    <  Container[max_dist_ndx].distance &&
+      fo.alarm_level >= Container[max_dist_ndx].alarm_level) {
+    Container[max_dist_ndx] = fo;
+    return true;
+  }
+#endif /* EXCLUDE_TRAFFIC_FILTER_EXTENSION */
+
+  return false;
+}
+
 void ParseData()
 {
     size_t rx_size = RF_Payload_Size(settings->rf_protocol);
@@ -157,59 +204,15 @@ void ParseData()
 
     if (memcmp(RxBuffer, TxBuffer, rx_size) == 0) {
       if (settings->nmea_p) {
-        StdOut.println(F("$PSRFE,RF loopback is detected"));
+        StdOut.println(F("$PSRFE,RF loopback is detected on Rx"));
       }
       return;
     }
 
     if (protocol_decode && (*protocol_decode)((void *) RxBuffer, &ThisAircraft, &fo)) {
-
-      int i;
-
       fo.rssi = RF_last_rssi;
-
       Traffic_Update(&fo);
-
-      for (i=0; i < MAX_TRACKING_OBJECTS; i++) {
-        if (Container[i].addr == fo.addr) {
-          uint8_t alert_bak = Container[i].alert;
-          Container[i] = fo;
-          Container[i].alert = alert_bak;
-          return;
-        }
-      }
-
-      int max_dist_ndx = 0;
-      int min_level_ndx = 0;
-
-      for (i=0; i < MAX_TRACKING_OBJECTS; i++) {
-        if (now() - Container[i].timestamp > ENTRY_EXPIRATION_TIME) {
-          Container[i] = fo;
-          return;
-        }
-#if !defined(EXCLUDE_TRAFFIC_FILTER_EXTENSION)
-        if  (Container[i].distance > Container[max_dist_ndx].distance)  {
-          max_dist_ndx = i;
-        }
-        if  (Container[i].alarm_level < Container[min_level_ndx].alarm_level)  {
-          min_level_ndx = i;
-        }
-#endif /* EXCLUDE_TRAFFIC_FILTER_EXTENSION */
-      }
-
-#if !defined(EXCLUDE_TRAFFIC_FILTER_EXTENSION)
-      if (fo.alarm_level > Container[min_level_ndx].alarm_level) {
-        Container[min_level_ndx] = fo;
-        return;
-      }
-
-      if (fo.distance    <  Container[max_dist_ndx].distance &&
-          fo.alarm_level >= Container[max_dist_ndx].alarm_level) {
-        Container[max_dist_ndx] = fo;
-        return;
-      }
-#endif /* EXCLUDE_TRAFFIC_FILTER_EXTENSION */
-
+      Traffic_Add(&fo);
     }
 }
 
@@ -285,5 +288,9 @@ int traffic_cmp_by_distance(const void *a, const void *b)
 
   if (ta->distance >  tb->distance) return  1;
   if (ta->distance == tb->distance) return  0;
+#if 0
   if (ta->distance <  tb->distance) return -1;
+#else
+  else return -1;
+#endif
 }

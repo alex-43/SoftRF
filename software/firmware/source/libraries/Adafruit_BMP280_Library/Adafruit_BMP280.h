@@ -16,16 +16,19 @@
 #ifndef __BMP280_H__
 #define __BMP280_H__
 
-#if (ARDUINO >= 100)
+#if (ARDUINO >= 100) || defined(HACKRF_ONE)
  #include "Arduino.h"
 #else
  #include "WProgram.h"
 #endif
 
-#if !(defined(ESP8266)             || defined(ESP32) || \
-      defined(ENERGIA_ARCH_CC13XX) || defined(ENERGIA_ARCH_CC13X2) || \
-      defined(ARDUINO_ARCH_STM32)  || defined(__ASR6501__) || \
-      defined(ARDUINO_ARCH_NRF52))
+#if !(defined(ESP8266)              || defined(ESP32)                || \
+      defined(ENERGIA_ARCH_CC13XX)  || defined(ENERGIA_ARCH_CC13X2)  || \
+      defined(ARDUINO_ARCH_STM32)   || defined(__ASR6501__)          || \
+      defined(ARDUINO_ARCH_ASR650X) || defined(ARDUINO_ARCH_ASR6601) || \
+      defined(ARDUINO_ARCH_NRF52)   || defined(ARDUINO_ARCH_SAMD)    || \
+      defined(ARDUINO_ARCH_AVR)     || defined(ARDUINO_ARCH_RP2040)  || \
+      defined(HACKRF_ONE))
 #include <Adafruit_Sensor.h>
 #endif
 
@@ -34,6 +37,11 @@
  #define Wire TinyWireM
 #else
  #include <Wire.h>
+ #if defined(ARDUINO_ARCH_RP2040) && defined(ARDUINO_GENERIC_RP2040)
+ #define Wire Wire1
+ #elif defined(ARDUINO_ARCH_ASR6601) && defined(CubeCell_BoardPRO)
+ #define Wire Wire2
+ #endif
 #endif
 
 /*=========================================================================
@@ -129,11 +137,27 @@ class Adafruit_BMP280_Unified : public Adafruit_Sensor
 class Adafruit_BMP280
 {
   public:
+
+  /** Operating mode for the sensor. */
+  enum sensor_mode {
+    /** Sleep mode. */
+    MODE_SLEEP = 0x00,
+    /** Forced mode. */
+    MODE_FORCED = 0x01,
+    /** Normal mode. */
+    MODE_NORMAL = 0x03,
+    /** Software reset. */
+    MODE_SOFT_RESET_CODE = 0xB6
+  };
+
     Adafruit_BMP280();
     Adafruit_BMP280(int8_t cspin);
     Adafruit_BMP280(int8_t cspin, int8_t mosipin, int8_t misopin, int8_t sckpin);
 
     bool  begin(uint8_t addr = BMP280_ADDRESS, uint8_t chipid = BMP280_CHIPID);
+    void reset(void);
+    uint8_t sensorID(void);
+
     float readTemperature(void);
     float readPressure(void);
     float readAltitude(float seaLevelhPa = 1013.25);

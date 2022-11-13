@@ -1,6 +1,6 @@
 /*
  * NMEAHelper.cpp
- * Copyright (C) 2017-2021 Linar Yusupov
+ * Copyright (C) 2017-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -66,6 +66,59 @@ extern uint32_t tx_packets_counter, rx_packets_counter;
 unsigned long RPYL_TimeMarker = 0;
 #endif /* ENABLE_AHRS */
 
+#if defined(USE_NMEA_CFG)
+
+TinyGPSCustom C_Version;   /* 1 */
+TinyGPSCustom C_Mode;
+TinyGPSCustom C_Protocol;
+TinyGPSCustom C_Band;
+TinyGPSCustom C_AcftType;
+TinyGPSCustom C_Alarm;
+TinyGPSCustom C_TxPower;
+TinyGPSCustom C_Volume;
+TinyGPSCustom C_Pointer;
+TinyGPSCustom C_NMEA_gnss; /* 10 */
+TinyGPSCustom C_NMEA_private;
+TinyGPSCustom C_NMEA_legacy;
+TinyGPSCustom C_NMEA_sensors;
+TinyGPSCustom C_NMEA_Output;
+TinyGPSCustom C_GDL90_Output;
+TinyGPSCustom C_D1090_Output;
+TinyGPSCustom C_Stealth;
+TinyGPSCustom C_noTrack;
+TinyGPSCustom C_PowerSave; /* 19 */
+
+#if defined(USE_OGN_ENCRYPTION)
+/* Security and privacy */
+TinyGPSCustom S_Version;
+TinyGPSCustom S_IGC_Key;
+#endif /* USE_OGN_ENCRYPTION */
+
+#if defined(USE_SKYVIEW_CFG)
+#include "../../driver/EPD.h"
+
+TinyGPSCustom V_Version; /* 1 */
+TinyGPSCustom V_Adapter;
+TinyGPSCustom V_Connection;
+TinyGPSCustom V_Units;
+TinyGPSCustom V_Zoom;
+TinyGPSCustom V_Protocol;
+TinyGPSCustom V_Baudrate;
+TinyGPSCustom V_Server;
+TinyGPSCustom V_Key;
+TinyGPSCustom V_Rotate;  /* 10 */
+TinyGPSCustom V_Orientation;
+TinyGPSCustom V_AvDB;
+TinyGPSCustom V_ID_Pref;
+TinyGPSCustom V_VMode;
+TinyGPSCustom V_Voice;
+TinyGPSCustom V_AntiGhost;
+TinyGPSCustom V_Filter;
+TinyGPSCustom V_PowerSave;
+TinyGPSCustom V_Team;    /* 19 */
+#endif /* USE_SKYVIEW_CFG */
+#endif /* USE_NMEA_CFG */
+
 static char *ltrim(char *s)
 {
   if(s) {
@@ -92,6 +145,65 @@ void NMEA_add_checksum(char *buf, size_t limit)
 
 void NMEA_setup()
 {
+#if defined(USE_NMEA_CFG)
+  const char *psrf_c = "PSRFC";
+  int term_num = 1;
+
+  C_Version.begin      (gnss, psrf_c, term_num++); /* 1 */
+  C_Mode.begin         (gnss, psrf_c, term_num++);
+  C_Protocol.begin     (gnss, psrf_c, term_num++);
+  C_Band.begin         (gnss, psrf_c, term_num++);
+  C_AcftType.begin     (gnss, psrf_c, term_num++);
+  C_Alarm.begin        (gnss, psrf_c, term_num++);
+  C_TxPower.begin      (gnss, psrf_c, term_num++);
+  C_Volume.begin       (gnss, psrf_c, term_num++);
+  C_Pointer.begin      (gnss, psrf_c, term_num++);
+  C_NMEA_gnss.begin    (gnss, psrf_c, term_num++); /* 10 */
+  C_NMEA_private.begin (gnss, psrf_c, term_num++);
+  C_NMEA_legacy.begin  (gnss, psrf_c, term_num++);
+  C_NMEA_sensors.begin (gnss, psrf_c, term_num++);
+  C_NMEA_Output.begin  (gnss, psrf_c, term_num++);
+  C_GDL90_Output.begin (gnss, psrf_c, term_num++);
+  C_D1090_Output.begin (gnss, psrf_c, term_num++);
+  C_Stealth.begin      (gnss, psrf_c, term_num++);
+  C_noTrack.begin      (gnss, psrf_c, term_num++);
+  C_PowerSave.begin    (gnss, psrf_c, term_num  ); /* 19 */
+
+#if defined(USE_OGN_ENCRYPTION)
+/* Security and privacy */
+  const char *psrf_s = "PSRFS";
+  term_num = 1;
+
+  S_Version.begin      (gnss, psrf_s, term_num++);
+  S_IGC_Key.begin      (gnss, psrf_s, term_num  );
+#endif /* USE_OGN_ENCRYPTION */
+
+#if defined(USE_SKYVIEW_CFG)
+  const char *pskv_c = "PSKVC";
+  term_num = 1;
+
+  V_Version.begin      (gnss, pskv_c, term_num++); /* 1 */
+  V_Adapter.begin      (gnss, pskv_c, term_num++);
+  V_Connection.begin   (gnss, pskv_c, term_num++);
+  V_Units.begin        (gnss, pskv_c, term_num++);
+  V_Zoom.begin         (gnss, pskv_c, term_num++);
+  V_Protocol.begin     (gnss, pskv_c, term_num++);
+  V_Baudrate.begin     (gnss, pskv_c, term_num++);
+  V_Server.begin       (gnss, pskv_c, term_num++);
+  V_Key.begin          (gnss, pskv_c, term_num++);
+  V_Rotate.begin       (gnss, pskv_c, term_num++); /* 10 */
+  V_Orientation.begin  (gnss, pskv_c, term_num++);
+  V_AvDB.begin         (gnss, pskv_c, term_num++);
+  V_ID_Pref.begin      (gnss, pskv_c, term_num++);
+  V_VMode.begin        (gnss, pskv_c, term_num++);
+  V_Voice.begin        (gnss, pskv_c, term_num++);
+  V_AntiGhost.begin    (gnss, pskv_c, term_num++);
+  V_Filter.begin       (gnss, pskv_c, term_num++);
+  V_PowerSave.begin    (gnss, pskv_c, term_num++);
+  V_Team.begin         (gnss, pskv_c, term_num  ); /* 19 */
+#endif /* USE_SKYVIEW_CFG */
+#endif /* USE_NMEA_CFG */
+
 #if defined(NMEA_TCP_SERVICE)
   if (settings->nmea_out == NMEA_TCP) {
     NmeaTCPServer.begin();
@@ -122,8 +234,9 @@ void NMEA_loop()
             (int) (ThisAircraft.pressure_altitude * _GPS_FEET_PER_METER),
             -1000, 60000);
 
-    snprintf_P(NMEABuffer, sizeof(NMEABuffer), PSTR("$PGRMZ,%d,f,3*"),
-            altitude ); /* feet , 3D fix */
+    /* https://developer.garmin.com/downloads/legacy/uploads/2015/08/190-00684-00.pdf */
+    snprintf_P(NMEABuffer, sizeof(NMEABuffer), PSTR("$PGRMZ,%d,f,%c*"),
+               altitude, isValidGNSSFix() ? '3' : '1'); /* feet , 3D fix */
 
     NMEA_add_checksum(NMEABuffer, sizeof(NMEABuffer) - strlen(NMEABuffer));
 
@@ -287,18 +400,19 @@ void NMEA_Export()
     int alt_diff;
     float distance;
 
-    int total_objects = 0;
-    int alarm_level = ALARM_LEVEL_NONE;
+    int total_objects  = 0;
+    int alarm_level    = ALARM_LEVEL_NONE;
+    int data_source    = DATA_SOURCE_FLARM;
     time_t this_moment = now();
 
     /* High priority object (most relevant target) */
-    int HP_bearing = 0;
-    int HP_alt_diff = 0;
+    int HP_bearing     = 0;
+    int HP_alt_diff    = 0;
     int HP_alarm_level = ALARM_LEVEL_NONE;
-    float HP_distance = 2147483647;
-    uint32_t HP_addr = 0;
+    float HP_distance  = 2147483647;
+    uint32_t HP_addr   = 0;
 
-    bool has_Fix = isValidFix() || (settings->mode == SOFTRF_MODE_TXRX_TEST);
+    bool has_Fix       = isValidFix() || (settings->mode == SOFTRF_MODE_TXRX_TEST);
 
     if (has_Fix) {
       for (int i=0; i < MAX_TRACKING_OBJECTS; i++) {
@@ -345,6 +459,12 @@ void NMEA_Export()
 
               if (strnlen((char *) Container[i].callsign, sizeof(Container[i].callsign)) > 0) {
                 memcpy(NMEA_Callsign, Container[i].callsign, sizeof(Container[i].callsign));
+                for (int j=0; j < sizeof(NMEA_Callsign); j++) {
+                  if (NMEA_Callsign[j] == ' ' || NMEA_Callsign[j] == ',' || NMEA_Callsign[j] == '*') {
+                    NMEA_Callsign[j] = 0;
+                    break;
+                  }
+                }
               } else {
                 memcpy(NMEA_Callsign, NMEA_CallSign_Prefix[Container[i].protocol],
                   strlen(NMEA_CallSign_Prefix[Container[i].protocol]));
@@ -360,12 +480,18 @@ void NMEA_Export()
                   str.c_str(), str.length());
               }
 
-              snprintf_P(NMEABuffer, sizeof(NMEABuffer), PSTR("$PFLAA,%d,%d,%d,%d,%d,%06X!%s,%d,,%d,%s,%d*"),
+              data_source = (Container[i].protocol == RF_PROTOCOL_ADSB_UAT ||
+                             Container[i].protocol == RF_PROTOCOL_ADSB_1090) ?
+                            DATA_SOURCE_ADSB : DATA_SOURCE_FLARM;
+
+              snprintf_P(NMEABuffer, sizeof(NMEABuffer),
+                      PSTR("$PFLAA,%d,%d,%d,%d,%d,%06X!%s,%d,,%d,%s,%d" PFLAA_EXT1_FMT "*"),
                       alarm_level,
                       (int) (distance * cos(radians(bearing))), (int) (distance * sin(radians(bearing))),
                       alt_diff, addr_type, Container[i].addr, NMEA_Callsign,
                       (int) Container[i].course, (int) (Container[i].speed * _GPS_MPS_PER_KNOT),
-                      ltrim(str_climb_rate), Container[i].aircraft_type);
+                      ltrim(str_climb_rate), Container[i].aircraft_type
+                      PFLAA_EXT1_ARGS );
 
               NMEA_add_checksum(NMEABuffer, sizeof(NMEABuffer) - strlen(NMEABuffer));
 
@@ -388,6 +514,10 @@ void NMEA_Export()
 
     /* One PFLAU NMEA sentence is mandatory regardless of traffic reception status */
     if (settings->nmea_l) {
+      float voltage    = Battery_voltage();
+      int power_status = voltage > BATTERY_THRESHOLD_INVALID &&
+                         voltage < Battery_threshold() ?
+                         POWER_STATUS_BAD : POWER_STATUS_GOOD;
 
       if (total_objects > 0) {
         int rel_bearing = HP_bearing - ThisAircraft.course;
@@ -398,7 +528,7 @@ void NMEA_Export()
                 total_objects,
                 settings->txpower == RF_TX_POWER_OFF ? TX_STATUS_OFF : TX_STATUS_ON,
                 GNSS_STATUS_3D_MOVING,
-                POWER_STATUS_GOOD, HP_alarm_level, rel_bearing,
+                power_status, HP_alarm_level, rel_bearing,
                 ALARM_TYPE_AIRCRAFT, HP_alt_diff, (int) HP_distance, HP_addr
                 PFLAU_EXT1_ARGS );
       } else {
@@ -407,13 +537,24 @@ void NMEA_Export()
                 has_Fix && (settings->txpower != RF_TX_POWER_OFF) ?
                   TX_STATUS_ON : TX_STATUS_OFF,
                 has_Fix ? GNSS_STATUS_3D_MOVING : GNSS_STATUS_NONE,
-                POWER_STATUS_GOOD, HP_alarm_level
+                power_status, HP_alarm_level
                 PFLAU_EXT1_ARGS );
       }
 
       NMEA_add_checksum(NMEABuffer, sizeof(NMEABuffer) - strlen(NMEABuffer));
 
       NMEA_Out(settings->nmea_out, (byte *) NMEABuffer, strlen(NMEABuffer), false);
+
+#if !defined(EXCLUDE_SOFTRF_HEARTBEAT)
+      snprintf_P(NMEABuffer, sizeof(NMEABuffer),
+              PSTR("$PSRFH,%06X,%d,%d,%d,%d*"),
+              ThisAircraft.addr,settings->rf_protocol,
+              rx_packets_counter,tx_packets_counter,(int)(voltage*100));
+
+      NMEA_add_checksum(NMEABuffer, sizeof(NMEABuffer) - strlen(NMEABuffer));
+
+      NMEA_Out(settings->nmea_out, (byte *) NMEABuffer, strlen(NMEABuffer), false);
+#endif /* EXCLUDE_SOFTRF_HEARTBEAT */
     }
 }
 
@@ -550,3 +691,371 @@ void NMEA_GGA()
 }
 
 #endif /* USE_NMEALIB */
+
+#if defined(USE_NMEA_CFG)
+
+#include "../../driver/Sound.h"
+#include "../../driver/LED.h"
+#include "GDL90.h"
+#include "D1090.h"
+
+#if !defined(SERIAL_FLUSH)
+#define SERIAL_FLUSH()       Serial.flush()
+#endif
+
+uint8_t C_NMEA_Source;
+
+static void nmea_cfg_restart()
+{
+  Serial.println();
+  Serial.println(F("Restart is in progress. Please, wait..."));
+  Serial.println();
+  SERIAL_FLUSH();
+  Sound_fini();
+  RF_Shutdown();
+  SoC->reset();
+}
+
+void NMEA_Process_SRF_SKV_Sentences()
+{
+      if (C_Version.isUpdated()) {
+        if (strncmp(C_Version.value(), "RST", 3) == 0) {
+            SoC->WDT_fini();
+            nmea_cfg_restart();
+        } else if (strncmp(C_Version.value(), "OFF", 3) == 0) {
+          shutdown(SOFTRF_SHUTDOWN_NMEA);
+        } else if (strncmp(C_Version.value(), "?", 1) == 0) {
+          char psrfc_buf[MAX_PSRFC_LEN];
+
+          snprintf_P(psrfc_buf, sizeof(psrfc_buf),
+              PSTR("$PSRFC,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d*"),
+              PSRFC_VERSION,        settings->mode,     settings->rf_protocol,
+              settings->band,       settings->aircraft_type, settings->alarm,
+              settings->txpower,    settings->volume,   settings->pointer,
+              settings->nmea_g,     settings->nmea_p,   settings->nmea_l,
+              settings->nmea_s,     settings->nmea_out, settings->gdl90,
+              settings->d1090,      settings->stealth,  settings->no_track,
+              settings->power_save );
+
+          NMEA_add_checksum(psrfc_buf, sizeof(psrfc_buf) - strlen(psrfc_buf));
+
+#if !defined(USE_NMEA_CFG)
+          uint8_t dest = settings->nmea_out;
+#else
+          uint8_t dest = C_NMEA_Source;
+#endif /* USE_NMEA_CFG */
+
+          NMEA_Out(dest, (byte *) psrfc_buf, strlen(psrfc_buf), false);
+
+        } else if (atoi(C_Version.value()) == PSRFC_VERSION) {
+          bool cfg_is_updated = false;
+
+          if (C_Mode.isUpdated())
+          {
+            settings->mode = atoi(C_Mode.value());
+            Serial.print(F("Mode = ")); Serial.println(settings->mode);
+            cfg_is_updated = true;
+          }
+          if (C_Protocol.isUpdated())
+          {
+            settings->rf_protocol = atoi(C_Protocol.value());
+            Serial.print(F("Protocol = ")); Serial.println(settings->rf_protocol);
+            cfg_is_updated = true;
+          }
+          if (C_Band.isUpdated())
+          {
+            settings->band = atoi(C_Band.value());
+            Serial.print(F("Region = ")); Serial.println(settings->band);
+            cfg_is_updated = true;
+          }
+          if (C_AcftType.isUpdated())
+          {
+            settings->aircraft_type = atoi(C_AcftType.value());
+            Serial.print(F("AcftType = ")); Serial.println(settings->aircraft_type);
+            cfg_is_updated = true;
+          }
+          if (C_Alarm.isUpdated())
+          {
+            settings->alarm = atoi(C_Alarm.value());
+            Serial.print(F("Alarm = ")); Serial.println(settings->alarm);
+            cfg_is_updated = true;
+          }
+          if (C_TxPower.isUpdated())
+          {
+            settings->txpower = atoi(C_TxPower.value());
+            Serial.print(F("TxPower = ")); Serial.println(settings->txpower);
+            cfg_is_updated = true;
+          }
+          if (C_Volume.isUpdated())
+          {
+            settings->volume = atoi(C_Volume.value());
+            Serial.print(F("Volume = ")); Serial.println(settings->volume);
+            cfg_is_updated = true;
+          }
+           if (C_Pointer.isUpdated())
+          {
+            settings->pointer = atoi(C_Pointer.value());
+            Serial.print(F("Pointer = ")); Serial.println(settings->pointer);
+            cfg_is_updated = true;
+          }
+          if (C_NMEA_gnss.isUpdated())
+          {
+            settings->nmea_g = atoi(C_NMEA_gnss.value());
+            Serial.print(F("NMEA_gnss = ")); Serial.println(settings->nmea_g);
+            cfg_is_updated = true;
+          }
+          if (C_NMEA_private.isUpdated())
+          {
+            settings->nmea_p = atoi(C_NMEA_private.value());
+            Serial.print(F("NMEA_private = ")); Serial.println(settings->nmea_p);
+            cfg_is_updated = true;
+          }
+          if (C_NMEA_legacy.isUpdated())
+          {
+            settings->nmea_l = atoi(C_NMEA_legacy.value());
+            Serial.print(F("NMEA_legacy = ")); Serial.println(settings->nmea_l);
+            cfg_is_updated = true;
+          }
+           if (C_NMEA_sensors.isUpdated())
+          {
+            settings->nmea_s = atoi(C_NMEA_sensors.value());
+            Serial.print(F("NMEA_sensors = ")); Serial.println(settings->nmea_s);
+            cfg_is_updated = true;
+          }
+          if (C_NMEA_Output.isUpdated())
+          {
+            settings->nmea_out = atoi(C_NMEA_Output.value());
+            Serial.print(F("NMEA_Output = ")); Serial.println(settings->nmea_out);
+            cfg_is_updated = true;
+          }
+          if (C_GDL90_Output.isUpdated())
+          {
+            settings->gdl90 = atoi(C_GDL90_Output.value());
+            Serial.print(F("GDL90_Output = ")); Serial.println(settings->gdl90);
+            cfg_is_updated = true;
+          }
+          if (C_D1090_Output.isUpdated())
+          {
+            settings->d1090 = atoi(C_D1090_Output.value());
+            Serial.print(F("D1090_Output = ")); Serial.println(settings->d1090);
+            cfg_is_updated = true;
+          }
+          if (C_Stealth.isUpdated())
+          {
+            settings->stealth = atoi(C_Stealth.value());
+            Serial.print(F("Stealth = ")); Serial.println(settings->stealth);
+            cfg_is_updated = true;
+          }
+          if (C_noTrack.isUpdated())
+          {
+            settings->no_track = atoi(C_noTrack.value());
+            Serial.print(F("noTrack = ")); Serial.println(settings->no_track);
+            cfg_is_updated = true;
+          }
+          if (C_PowerSave.isUpdated())
+          {
+            settings->power_save = atoi(C_PowerSave.value());
+            Serial.print(F("PowerSave = ")); Serial.println(settings->power_save);
+            cfg_is_updated = true;
+          }
+
+          if (cfg_is_updated) {
+            SoC->WDT_fini();
+            if (SoC->Bluetooth_ops) { SoC->Bluetooth_ops->fini(); }
+            EEPROM_store();
+            nmea_cfg_restart();
+          }
+        }
+      }
+
+#if defined(USE_OGN_ENCRYPTION)
+      if (S_Version.isUpdated()) {
+        if (strncmp(S_Version.value(), "?", 1) == 0) {
+          char psrfs_buf[MAX_PSRFS_LEN];
+
+          snprintf_P(psrfs_buf, sizeof(psrfs_buf),
+              PSTR("$PSRFS,%d,%08X%08X%08X%08X*"),
+              PSRFS_VERSION, settings->igc_key[0], settings->igc_key[1],
+                             settings->igc_key[2], settings->igc_key[3]);
+
+          NMEA_add_checksum(psrfs_buf, sizeof(psrfs_buf) - strlen(psrfs_buf));
+
+          NMEA_Out(C_NMEA_Source, (byte *) psrfs_buf, strlen(psrfs_buf), false);
+
+        } else if (atoi(S_Version.value()) == PSRFS_VERSION) {
+          bool cfg_is_updated = false;
+
+          if (S_IGC_Key.isUpdated())
+          {
+            char buf[32 + 1];
+
+            strncpy(buf, S_IGC_Key.value(), sizeof(buf));
+
+            settings->igc_key[3] = strtoul(buf + 24, NULL, 16);
+            buf[24] = 0;
+            settings->igc_key[2] = strtoul(buf + 16, NULL, 16);
+            buf[16] = 0;
+            settings->igc_key[1] = strtoul(buf +  8, NULL, 16);
+            buf[ 8] = 0;
+            settings->igc_key[0] = strtoul(buf +  0, NULL, 16);
+
+            snprintf_P(buf, sizeof(buf),
+              PSTR("%08X%08X%08X%08X"),
+              settings->igc_key[0], settings->igc_key[1],
+              settings->igc_key[2], settings->igc_key[3]);
+
+            Serial.print(F("IGC Key = ")); Serial.println(buf);
+            cfg_is_updated = true;
+          }
+          if (cfg_is_updated) {
+            SoC->WDT_fini();
+            if (SoC->Bluetooth_ops) { SoC->Bluetooth_ops->fini(); }
+            EEPROM_store();
+            nmea_cfg_restart();
+          }
+        }
+      }
+#endif /* USE_OGN_ENCRYPTION */
+
+#if defined(USE_SKYVIEW_CFG)
+      if (V_Version.isUpdated()) {
+        if (strncmp(V_Version.value(), "?", 1) == 0) {
+          char pskvc_buf[MAX_PSKVC_LEN];
+
+          snprintf_P(pskvc_buf, sizeof(pskvc_buf),
+              PSTR("$PSKVC,%d,%d,%d,%d,%d,%d,%d,%s,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%X*"),
+              PSKVC_VERSION,  ui->adapter,      ui->connection,
+              ui->units,      ui->zoom,         ui->protocol,
+              ui->baudrate,   ui->server,       ui->key,
+              ui->rotate,     ui->orientation,  ui->adb,
+              ui->idpref,     ui->vmode,        ui->voice,
+              ui->aghost,     ui->filter,       ui->power_save,
+              ui->team);
+
+          NMEA_add_checksum(pskvc_buf, sizeof(pskvc_buf) - strlen(pskvc_buf));
+
+          NMEA_Out(C_NMEA_Source, (byte *) pskvc_buf, strlen(pskvc_buf), false);
+
+        } else if (atoi(V_Version.value()) == PSKVC_VERSION) {
+          bool cfg_is_updated = false;
+
+          if (V_Adapter.isUpdated())
+          {
+            ui->adapter = atoi(V_Adapter.value());
+            Serial.print(F("Adapter = ")); Serial.println(ui->adapter);
+            cfg_is_updated = true;
+          }
+          if (V_Connection.isUpdated())
+          {
+            ui->connection = atoi(V_Connection.value());
+            Serial.print(F("Connection = ")); Serial.println(ui->connection);
+            cfg_is_updated = true;
+          }
+          if (V_Units.isUpdated())
+          {
+            ui->units = atoi(V_Units.value());
+            Serial.print(F("Units = ")); Serial.println(ui->units);
+            cfg_is_updated = true;
+          }
+          if (V_Zoom.isUpdated())
+          {
+            ui->zoom = atoi(V_Zoom.value());
+            Serial.print(F("Zoom = ")); Serial.println(ui->zoom);
+            cfg_is_updated = true;
+          }
+          if (V_Protocol.isUpdated())
+          {
+            ui->protocol = atoi(V_Protocol.value());
+            Serial.print(F("Protocol = ")); Serial.println(ui->protocol);
+            cfg_is_updated = true;
+          }
+          if (V_Baudrate.isUpdated())
+          {
+            ui->baudrate = atoi(V_Baudrate.value());
+            Serial.print(F("Baudrate = ")); Serial.println(ui->baudrate);
+            cfg_is_updated = true;
+          }
+          if (V_Server.isUpdated())
+          {
+            strncpy(ui->server, V_Server.value(), sizeof(ui->server));
+            Serial.print(F("Server = ")); Serial.println(ui->server);
+            cfg_is_updated = true;
+          }
+           if (V_Key.isUpdated())
+          {
+            strncpy(ui->key, V_Key.value(), sizeof(ui->key));
+            Serial.print(F("Key = ")); Serial.println(ui->key);
+            cfg_is_updated = true;
+          }
+          if (V_Rotate.isUpdated())
+          {
+            ui->rotate = atoi(V_Rotate.value());
+            Serial.print(F("Rotation = ")); Serial.println(ui->rotate);
+            cfg_is_updated = true;
+          }
+          if (V_Orientation.isUpdated())
+          {
+            ui->orientation = atoi(V_Orientation.value());
+            Serial.print(F("Orientation = ")); Serial.println(ui->orientation);
+            cfg_is_updated = true;
+          }
+          if (V_AvDB.isUpdated())
+          {
+            ui->adb = atoi(V_AvDB.value());
+            Serial.print(F("AvDB = ")); Serial.println(ui->adb);
+            cfg_is_updated = true;
+          }
+          if (V_ID_Pref.isUpdated())
+          {
+            ui->idpref = atoi(V_ID_Pref.value());
+            Serial.print(F("ID_Pref = ")); Serial.println(ui->idpref);
+            cfg_is_updated = true;
+          }
+           if (V_VMode.isUpdated())
+          {
+            ui->vmode = atoi(V_VMode.value());
+            Serial.print(F("VMode = ")); Serial.println(ui->vmode);
+            cfg_is_updated = true;
+          }
+          if (V_Voice.isUpdated())
+          {
+            ui->voice = atoi(V_Voice.value());
+            Serial.print(F("Voice = ")); Serial.println(ui->voice);
+            cfg_is_updated = true;
+          }
+          if (V_AntiGhost.isUpdated())
+          {
+            ui->aghost = atoi(V_AntiGhost.value());
+            Serial.print(F("AntiGhost = ")); Serial.println(ui->aghost);
+            cfg_is_updated = true;
+          }
+          if (V_Filter.isUpdated())
+          {
+            ui->filter = atoi(V_Filter.value());
+            Serial.print(F("Filter = ")); Serial.println(ui->filter);
+            cfg_is_updated = true;
+          }
+          if (V_PowerSave.isUpdated())
+          {
+            ui->power_save = atoi(V_PowerSave.value());
+            Serial.print(F("PowerSave = ")); Serial.println(ui->power_save);
+            cfg_is_updated = true;
+          }
+          if (V_Team.isUpdated())
+          {
+            ui->team = strtoul(V_Team.value(), NULL, 16);
+            Serial.print(F("Team = ")); Serial.println(ui->team, HEX);
+            cfg_is_updated = true;
+          }
+
+          if (cfg_is_updated) {
+            SoC->WDT_fini();
+            if (SoC->Bluetooth_ops) { SoC->Bluetooth_ops->fini(); }
+            EEPROM_store();
+            nmea_cfg_restart();
+          }
+        }
+      }
+#endif /* USE_SKYVIEW_CFG */
+}
+#endif /* USE_NMEA_CFG */

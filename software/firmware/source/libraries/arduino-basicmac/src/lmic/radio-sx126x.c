@@ -314,7 +314,12 @@ static void SetDIO3AsTcxoCtrl (uint8_t voltage) {
     uint32_t timeout = 320;
     uint8_t data[] = {voltage, (timeout >> 16) & 0xff, (timeout >> 8) & 0xff, timeout & 0xff };
 
-    writecmd(CMD_SETDIO3ASTCXOCTRL, data, sizeof(data));
+#if defined(__ASR6501__) || defined(ARDUINO_GENERIC_WLE5CCUX)
+    if (hal_pin_tcxo(voltage))
+#elif defined(ARDUINO_ARCH_ASR6601)
+    if (LORAC->CR1 & 0x1)
+#endif /* ARDUINO_ARCH_ASR6601 */
+      writecmd(CMD_SETDIO3ASTCXOCTRL, data, sizeof(data));
 }
 
 // write payload to fifo buffer at offset 0
@@ -436,7 +441,24 @@ static void SetModulationParamsFsk (void) {
     param[2] = (br      ) & 0xFF;
 
     param[3] = 0x09; // TX pulse shape filter gaussian BT 0.5
-    param[4] = 0x19; // RX bandwidth 312 kHz DSB
+
+    switch (LMIC.protocol->bandwidth)
+    {
+    case RF_RX_BANDWIDTH_SS_50KHZ:
+      param[4] = 0x0B; // RX bandwidth 117.3 kHz DSB
+//    param[4] = 0x1A; // RX bandwidth 156.2 kHz DSB
+      break;
+    case RF_RX_BANDWIDTH_SS_100KHZ:
+      param[4] = 0x0A; // RX bandwidth 234.3 kHz DSB
+      break;
+    case RF_RX_BANDWIDTH_SS_166KHZ:
+      param[4] = 0x11; // RX bandwidth 373.6 kHz DSB
+      break;
+    case RF_RX_BANDWIDTH_SS_125KHZ:
+    default:
+      param[4] = 0x19; // RX bandwidth 312 kHz DSB
+      break;
+    }
 
     // set frequency deviation
     uint32_t Fdev;
@@ -568,7 +590,21 @@ static void SetDioIrqParams (uint16_t mask) {
 
 // set tx power (in dBm)
 static void SetTxPower (s1_t pw) {
-#if defined(BRD_sx1261_radio)
+#if defined(ARDUINO_GENERIC_WLE5CCUX)
+    if (lmic_wle_rf_output) {
+      // high power PA: -9 ... +22 dBm
+      if (pw > 22) pw = 22;
+      if (pw < -9) pw = -9;
+      // set PA config (and reset OCP to 140mA)
+      writecmd(CMD_SETPACONFIG, (const uint8_t[]) { 0x04, 0x07, 0x00, 0x01 }, 4);
+    } else {
+      // low power PA: -17 ... +14 dBm
+      if (pw > 14) pw = 14;
+      if (pw < -17) pw = -17;
+      // set PA config (and reset OCP to 60mA)
+      writecmd(CMD_SETPACONFIG, (const uint8_t[]) { 0x04, 0x00, 0x01, 0x01 }, 4);
+    }
+#elif defined(BRD_sx1261_radio)
     // low power PA: -17 ... +14 dBm
     if (pw > 14) pw = 14;
     if (pw < -17) pw = -17;
@@ -779,7 +815,7 @@ debug_printf("+++ rxfsk +++ %02x %d\r\n", rxcontinuous, LMIC.dataLen);
   			 now - LMIC.rxtime, osticks2ms(now - t0), now - t0);
 
   	    /* workaround against Rx issue on ASR650x target */
-#if !defined(CFG_DEBUG) && defined(__ASR6501__)
+#if !defined(CFG_DEBUG) && (defined(__ASR6501__) || defined(ARDUINO_ARCH_ASR650X))
   	    delay(1);
 #endif /* __ASR6501__ */
 
@@ -836,7 +872,7 @@ debug_printf("+++ rxlora +++ %02x\r\n", rxcontinuous);
   			 now - LMIC.rxtime, osticks2ms(now - t0), now - t0);
 
   	    /* workaround against Rx issue on ASR650x target */
-#if !defined(CFG_DEBUG) && defined(__ASR6501__)
+#if !defined(CFG_DEBUG) && (defined(__ASR6501__) || defined(ARDUINO_ARCH_ASR650X))
   	    delay(1);
 #endif /* __ASR6501__ */
 

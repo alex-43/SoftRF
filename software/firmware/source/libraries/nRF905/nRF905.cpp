@@ -7,10 +7,12 @@
  */
 
 #include <string.h>
-#if !defined(ESP8266) && !defined(ESP32) && !defined(RASPBERRY_PI) && \
-    !defined(ENERGIA_ARCH_CC13XX) && !defined(ENERGIA_ARCH_CC13X2) && \
-    !defined(ARDUINO_ARCH_STM32)  && !defined(ARDUINO_ARCH_NRF52)  && \
-    !defined(__ASR6501__)
+#if !defined(ESP8266) && !defined(ESP32) && !defined(RASPBERRY_PI)   && \
+    !defined(ENERGIA_ARCH_CC13XX)  && !defined(ENERGIA_ARCH_CC13X2)  && \
+    !defined(ARDUINO_ARCH_STM32)   && !defined(ARDUINO_ARCH_NRF52)   && \
+    !defined(__ASR6501__)          && !defined(HACKRF_ONE)           && \
+    !defined(ARDUINO_ARCH_SAMD)    && !defined(ARDUINO_ARCH_ASR650X) && \
+    !defined(ARDUINO_ARCH_ASR6601) && !defined(ARDUINO_ARCH_RP2040)
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -23,19 +25,19 @@
 #include <Arduino.h>
 #include <SPI.h>
 #if defined(ENERGIA_ARCH_CC13XX) || defined(ENERGIA_ARCH_CC13X2) || \
-    defined(ARDUINO_ARCH_NRF52)
+    defined(ARDUINO_ARCH_NRF52)  || defined(ARDUINO_ARCH_SAMD)   || \
+    defined(ARDUINO_ARCH_RP2040) || (defined(ARDUINO_ARCH_STM32) && \
+    defined(ARDUINO_WisDuo_RAK3172_Evaluation_Board))
 #define _BV(bit) (1 << (bit))
-#if defined(ARDUINO_ARCH_NRF52)
-extern SPIClass SPI0;
-#define SPI SPI0
-#endif /* ARDUINO_ARCH_NRF52 */
 #endif /* ENERGIA_ARCH_CC13XX || ENERGIA_ARCH_CC13X2 || ARDUINO_ARCH_NRF52 */
 #else
-#if !defined(RASPBERRY_PI)
-#include "nRF905_spi.h"
-#else
+#if defined(RASPBERRY_PI)
 #define SPI SPI0
 #include <raspi/raspi.h>
+#elif defined(HACKRF_ONE)
+#include <Arduino.h>
+#else
+#include "nRF905_spi.h"
 #endif /* RASPBERRY_PI */
 #endif
 #include "nRF905.h"
@@ -43,7 +45,7 @@ extern SPIClass SPI0;
 #include "nRF905_defs.h"
 #include "nRF905_types.h"
 
-#if defined(RASPBERRY_PI)
+#if defined(RASPBERRY_PI) || defined(HACKRF_ONE)
 #define ARDUINO
 #endif /* RASPBERRY_PI */
 
@@ -179,7 +181,9 @@ void nRF905_init()
 
 	SPI.begin();
 
-#if !defined(RASPBERRY_PI) && !defined(__ASR6501__)
+#if !defined(RASPBERRY_PI) && !defined(__ASR6501__) && \
+    !defined(ARDUINO_ARCH_ASR650X) && !defined(ARDUINO_ARCH_ASR6601) && \
+    !defined(ARDUINO_ARCH_RP2040)
 	SPI.setClockDivider(SPI_CLOCK_DIV2);
 #endif /* RASPBERRY_PI */
 #else

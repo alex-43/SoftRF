@@ -5,7 +5,7 @@
  * Encoder and decoder for open FANET radio protocol
  * URL: https://github.com/3s1d/fanet-stm32/tree/master/Src/fanet
  *
- * Copyright (C) 2017-2021 Linar Yusupov
+ * Copyright (C) 2017-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,14 +28,21 @@
  * FANET uses LoRa modulation
  * FANET+ uses both LoRa (FANET) and FSK(FLARM)
  *
+ * Zone 1: EU, default
  * Freq: 868.2 [ 869.525 ] MHz
  * Modulation: LoRa (TM)
  * Parameters: BW_250 SF_7 CR_5
+ *
+ * Zone 2: America (South+North), Australia, New Zealand, China, Japan
+ * Freq: 920.8 MHz
+ * Modulation: LoRa (TM)
+ * Parameters: BW_500 SF_7 CR_5
  */
 
 #define SOFRF_FANET_VENDOR_ID       0x07
 
 //#define FANET_NEXT
+//#define FANET_ZONE2_ENABLE
 
 enum
 {
@@ -98,7 +105,8 @@ typedef struct {
 #define FANET_PAYLOAD_SIZE    sizeof(fanet_packet_t)
 #define FANET_HEADER_SIZE     4
 
-/* Declared air time of FANET+ is 20-40 ms */
+#define FANET_AIR_TIME        36   /* in ms */
+
 #define FANET_TX_INTERVAL_MIN 2500 /* in ms */
 #define FANET_TX_INTERVAL_MAX 3500
 

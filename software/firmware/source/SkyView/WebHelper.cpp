@@ -1,6 +1,6 @@
 /*
  * WebHelper.cpp
- * Copyright (C) 2016-2021 Linar Yusupov
+ * Copyright (C) 2016-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -66,7 +66,7 @@ static const char about_html[] PROGMEM = "<html>\
   </head>\
 <body>\
 <h1 align=center>About</h1>\
-<p>This firmware is a part of open SoftRF project</p>\
+<p>This firmware is a part of SoftRF project</p>\
 <p>URL: http://github.com/lyusupov/SoftRF</p>\
 <p>Author: <b>Linar Yusupov</b></p>\
 <p>E-mail: linar.r.yusupov@gmail.com</p>\
@@ -91,7 +91,7 @@ static const char about_html[] PROGMEM = "<html>\
 <tr><th align=left>Evandro Copercini</th><td align=left>ESP32 BT SPP library</td></tr>\
 </table>\
 <hr>\
-Copyright (C) 2019-2021 &nbsp;&nbsp;&nbsp; Linar Yusupov\
+Copyright (C) 2019-2022 &nbsp;&nbsp;&nbsp; Linar Yusupov\
 </body>\
 </html>";
 
@@ -133,7 +133,7 @@ void handleSettings() {
 <td align=right>\
 <select name='adapter'>\
 <option %s value='%d'>e-Paper TTGO T5S</option>\
-<option %s value='%d'>e-Paper TTGO T5 4.7</option>\
+<!-- <option %s value='%d'>e-Paper TTGO T5 4.7</option> -->\
 <option %s value='%d'>e-Paper Waveshare ESP32</option>\
 <!-- <option %s value='%d'>OLED</option> -->\
 </select>\

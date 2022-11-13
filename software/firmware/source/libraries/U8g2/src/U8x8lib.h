@@ -89,8 +89,21 @@
 #endif 
 #endif
 
-#if defined(ARDUINO_ARCH_ESP32)
+#ifdef HACKRF_ONE
+
+#ifdef U8X8_HAVE_HW_SPI
+#undef U8X8_HAVE_HW_SPI
+#endif
+
+#endif
+
+
+#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_ASR6601)
 #define WIRE_INTERFACES_COUNT 2
+
+#if defined(CubeCell_BoardPRO)
+#define Wire1 Wire2
+#endif
 
 #include <Wire.h>
 extern TwoWire Wire1;

@@ -1,7 +1,7 @@
 /*
  * Protocol_Legacy.h
  * Copyright (C) 2014-2015 Stanislaw Pusep
- * Copyright (C) 2016-2021 Linar Yusupov
+ * Copyright (C) 2016-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,8 @@
 #define LEGACY_PAYLOAD_SIZE    24
 #define LEGACY_CRC_TYPE        RF_CHECKSUM_TYPE_CCITT_FFFF
 #define LEGACY_CRC_SIZE        2
+
+#define LEGACY_AIR_TIME        6 /* in ms */
 
 #define LEGACY_TX_INTERVAL_MIN 600 /* in ms */
 #define LEGACY_TX_INTERVAL_MAX 1400
@@ -95,6 +97,15 @@ enum
 {
 	POWER_STATUS_BAD,
 	POWER_STATUS_GOOD
+};
+
+enum
+{
+	DATA_SOURCE_FLARM = 0,
+	DATA_SOURCE_ADSB  = 1,
+	DATA_SOURCE_ADSR  = 3, /* ADS-R (rebroadcasting of UAT ADS-B to 1090 MHz) */
+	DATA_SOURCE_TISB  = 4, /* TIS-B (broadcast of location of non-ADS-B equipped aircraft) */
+	DATA_SOURCE_MODES = 6  /* non-directional targets */
 };
 
 enum

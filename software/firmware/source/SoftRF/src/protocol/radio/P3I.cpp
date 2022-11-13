@@ -2,7 +2,7 @@
  *
  * Protocol_P3I.cpp
  * Encoder and decoder for PilotAware P3I radio protocol
- * Copyright (C) 2017-2021 Linar Yusupov
+ * Copyright (C) 2017-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,10 +45,14 @@ const rf_proto_desc_t p3i_proto_desc = {
   .whitening        = RF_WHITENING_NICERF,
   .bandwidth        = P3I_BANDWIDTH,
 
-  .tx_interval_min  = P3I_TX_INTERVAL_MIN,
-  .tx_interval_max  = P3I_TX_INTERVAL_MAX
-};
+  .air_time         = P3I_AIR_TIME,
 
+  .tm_type          = RF_TIMING_INTERVAL,
+  .tx_interval_min  = P3I_TX_INTERVAL_MIN,
+  .tx_interval_max  = P3I_TX_INTERVAL_MAX,
+  .slot0            = {0, 0},
+  .slot1            = {0, 0}
+};
 
 const uint8_t whitening_pattern[] PROGMEM = { 0x05, 0xb4, 0x05, 0xae, 0x14, 0xda,
   0xbf, 0x83, 0xc4, 0x04, 0xb2, 0x04, 0xd6, 0x4d, 0x87, 0xe2, 0x01, 0xa3, 0x26,

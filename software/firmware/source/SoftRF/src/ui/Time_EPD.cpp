@@ -1,6 +1,6 @@
 /*
  * View_Time_EPD.cpp
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -63,16 +63,14 @@ void EPD_time_loop()
   int16_t  tbx, tby;
   uint16_t tbw, tbh;
 
-  if (EPD_vmode_updated) {
-    EPD_Clear_Screen();
+  if (isTimeToEPD()) {
 
-    yield();
-
-    EPD_vmode_updated = false;
-  }
-
-  if (!EPD_ready_to_display) {
-
+#if defined(USE_EPD_TASK)
+  if (EPD_update_in_progress == EPD_UPDATE_NONE) {
+//  if (SoC->Display_lock()) {
+#else
+  {
+#endif
     bool ble_has_client = false;
 
     strcpy(buf_hm, "--:--");
@@ -122,8 +120,16 @@ void EPD_time_loop()
     display->setCursor((display->width() - tbw) / 2, display->height() / 2 + tbh + tbh);
     display->print(buf_sec);
 
+#if defined(USE_EPD_TASK)
     /* a signal to background EPD update task */
-    EPD_ready_to_display = true;
+    EPD_update_in_progress = EPD_UPDATE_FAST;
+//    SoC->Display_unlock();
+//    yield();
+#else
+    display->display(true);
+#endif
+  }
+    EPDTimeMarker = millis();
   }
 }
 

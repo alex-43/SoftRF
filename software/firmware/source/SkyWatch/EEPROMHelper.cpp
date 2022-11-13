@@ -1,6 +1,6 @@
 /*
  * EEPROMHelper.cpp
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 #include "TrafficHelper.h"
 #include "NMEAHelper.h"
 #include "BatteryHelper.h"
+#include "BluetoothHelper.h"
 
 #include <protocol.h>
 #include <freqplan.h>
@@ -41,7 +42,9 @@ void EEPROM_setup()
     delay(1000000);
   }
 
-  for (int i=0; i<sizeof(eeprom_t); i++) {
+  size_t size = sizeof(eeprom_t);
+
+  for (int i=0; i<size; i++) {
     eeprom_block.raw[i] = EEPROM.read(i);  
   }
 
@@ -81,7 +84,12 @@ void EEPROM_defaults()
   eeprom_block.field.settings.s.nmea_p          = false;
   eeprom_block.field.settings.s.nmea_l          = true;
   eeprom_block.field.settings.s.nmea_s          = true;
-  eeprom_block.field.settings.s.nmea_out        = NMEA_UART;
+
+  if (hw_info.model == SOFTRF_MODEL_WEBTOP_USB) {
+    eeprom_block.field.settings.s.nmea_out      = NMEA_USB;
+  } else {
+    eeprom_block.field.settings.s.nmea_out      = NMEA_UART;
+  }
   eeprom_block.field.settings.s.gdl90           = GDL90_OFF;
   eeprom_block.field.settings.s.d1090           = D1090_OFF;
   eeprom_block.field.settings.s.json            = JSON_OFF;
@@ -92,18 +100,24 @@ void EEPROM_defaults()
   /* SkyView defaults */
   eeprom_block.field.settings.m.adapter         = ADAPTER_NONE;
 
-  eeprom_block.field.settings.m.connection      = CON_SERIAL_MAIN;
+  if (hw_info.model == SOFTRF_MODEL_WEBTOP_USB) {
+    eeprom_block.field.settings.m.connection    = CON_USB;
+  } else {
+    eeprom_block.field.settings.m.connection    = CON_SERIAL_MAIN;
+  }
   if (hw_info.model == SOFTRF_MODEL_SKYWATCH) {
     eeprom_block.field.settings.m.baudrate      = B115200; /* S76G AN3155 BR */
   } else {
     eeprom_block.field.settings.m.baudrate      = B38400;
   }
   eeprom_block.field.settings.m.protocol        = PROTOCOL_NMEA;
+  eeprom_block.field.settings.m.rotate          = ROTATE_0;
   eeprom_block.field.settings.m.orientation     = DIRECTION_NORTH_UP;
 
   strcpy(eeprom_block.field.settings.m.ssid,      DEFAULT_AP_SSID);
   strcpy(eeprom_block.field.settings.m.psk,       DEFAULT_AP_PSK);
 
+  eeprom_block.field.settings.m.data_dest       = NMEA_UDP;
   eeprom_block.field.settings.m.bluetooth       = BLUETOOTH_OFF;
 
   strcpy(eeprom_block.field.settings.m.bt_name,   DEFAULT_BT_NAME);
@@ -116,11 +130,16 @@ void EEPROM_defaults()
   eeprom_block.field.settings.m.idpref          = ID_REG;
   eeprom_block.field.settings.m.voice           = VOICE_OFF;
   eeprom_block.field.settings.m.aghost          = ANTI_GHOSTING_OFF;
+
+  eeprom_block.field.settings.m.filter          = TRAFFIC_FILTER_OFF;
+  eeprom_block.field.settings.m.power_save      = POWER_SAVE_NONE;
 }
 
 void EEPROM_store()
 {
-  for (int i=0; i<sizeof(eeprom_t); i++) {
+  size_t size = sizeof(eeprom_t);
+
+  for (int i=0; i<size; i++) {
     EEPROM.write(i, eeprom_block.raw[i]);  
   }
 

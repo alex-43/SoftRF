@@ -7,7 +7,7 @@
  *    Development -  https://github.com/3s1d/fanet-stm32
  *    Deprecated  -  https://github.com/3s1d/fanet
  *
- * Copyright (C) 2017-2021 Linar Yusupov
+ * Copyright (C) 2017-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -55,8 +55,13 @@ const rf_proto_desc_t fanet_proto_desc = {
   .whitening        = RF_WHITENING_NONE,
   .bandwidth        = 0, /* INVALID FOR LORA */
 
+  .air_time         = FANET_AIR_TIME,
+
+  .tm_type          = RF_TIMING_INTERVAL,
   .tx_interval_min  = FANET_TX_INTERVAL_MIN,
-  .tx_interval_max  = FANET_TX_INTERVAL_MAX
+  .tx_interval_max  = FANET_TX_INTERVAL_MAX,
+  .slot0            = {0, 0},
+  .slot1            = {0, 0}
 };
 
 const uint8_t aircraft_type_to_fanet[] PROGMEM = {
@@ -345,7 +350,8 @@ size_t fanet_encode(void *fanet_pkt, ufo_t *this_aircraft) {
     pkt->speed        = speed2 & 0x7F;
   }
 
-  int climb10         = constrain((int)roundf(climb * 10.0f), -315, 315);
+  int climb10         = this_aircraft->stealth ?
+                        0 : constrain((int)roundf(climb * 10.0f), -315, 315);
   if(climb10 > 63) {
     pkt->climb_scale  = 1;
     pkt->climb        = ((climb10 + (climb10 >= 0 ? 2 : -2)) / 5);

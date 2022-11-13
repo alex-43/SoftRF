@@ -1,6 +1,6 @@
 /*
  * SoCHelper.h
- * Copyright (C) 2018-2021 Linar Yusupov
+ * Copyright (C) 2018-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,6 +29,11 @@
 #include "../platform/STM32.h"
 #include "../platform/PSoC4.h"
 #include "../platform/nRF52.h"
+#include "../platform/LPC43.h"
+#include "../platform/SAMD.h"
+#include "../platform/AVR.h"
+#include "../platform/ASR66.h"
+#include "../platform/RP2040.h"
 
 typedef struct SoC_ops_struct {
   uint8_t id;
@@ -53,7 +58,7 @@ typedef struct SoC_ops_struct {
   bool (*WiFi_hostname)(String);
   int  (*WiFi_clients_count)();
   bool (*EEPROM_begin)(size_t);
-  void (*EEPROM_extension)();
+  void (*EEPROM_extension)(int);
   void (*SPI_begin)();
   void (*swSer_begin)(unsigned long);
   void (*swSer_enableRx)(boolean);
@@ -63,6 +68,10 @@ typedef struct SoC_ops_struct {
   byte (*Display_setup)();
   void (*Display_loop)();
   void (*Display_fini)(int);
+#if 0
+  bool (*Display_lock)();
+  bool (*Display_unlock)();
+#endif
   void (*Battery_setup)();
   float (*Battery_param)(uint8_t);
   void (*GNSS_PPS_handler)();
@@ -75,6 +84,7 @@ typedef struct SoC_ops_struct {
   void (*Button_setup)();
   void (*Button_loop)();
   void (*Button_fini)();
+  DB_ops_t *ADB_ops;
 } SoC_ops_t;
 
 enum
@@ -82,11 +92,19 @@ enum
 	SOC_NONE,
 	SOC_ESP8266,
 	SOC_ESP32,
+	SOC_ESP32S2,
+	SOC_ESP32S3,
 	SOC_RPi,
-	SOC_CC13XX,
+	SOC_CC13X0,
+	SOC_CC13X2,
 	SOC_STM32,
 	SOC_PSOC4,
-	SOC_NRF52
+	SOC_NRF52,
+	SOC_LPC43,
+	SOC_SAMD,
+	SOC_AVR,
+	SOC_ASR66,
+	SOC_RP2040
 };
 
 extern const SoC_ops_t *SoC;
@@ -105,14 +123,30 @@ extern const SoC_ops_t CC13XX_ops;
 #if defined(ARDUINO_ARCH_STM32)
 extern const SoC_ops_t STM32_ops;
 #endif
-#if defined(__ASR6501__)
+#if defined(__ASR6501__) || defined(ARDUINO_ARCH_ASR650X)
 extern const SoC_ops_t PSoC4_ops;
 #endif
 #if defined(ARDUINO_ARCH_NRF52)
 extern const SoC_ops_t nRF52_ops;
 #endif
+#if defined(HACKRF_ONE)
+extern const SoC_ops_t LPC43_ops;
+#endif
+#if defined(ARDUINO_ARCH_SAMD)
+extern const SoC_ops_t SAMD_ops;
+#endif
+#if defined(ARDUINO_ARCH_AVR)
+extern const SoC_ops_t AVR_ops;
+#endif
+#if defined(ARDUINO_ARCH_ASR6601)
+extern const SoC_ops_t ASR66_ops;
+#endif
+#if defined(ARDUINO_ARCH_RP2040)
+extern const SoC_ops_t RP2040_ops;
+#endif
 
 byte SoC_setup(void);
 void SoC_fini(int);
+uint32_t DevID_Mapper(uint32_t);
 
 #endif /* SOCHELPER_H */

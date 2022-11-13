@@ -1,6 +1,6 @@
 /*
  * Platform_nRF52.h
- * Copyright (C) 2020-2021 Linar Yusupov
+ * Copyright (C) 2020-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -46,7 +46,8 @@
 
 #define SerialOutput            Serial1
 #define USBSerial               Serial
-#define swSer                   Serial2
+#define Serial_GNSS_In          Serial2
+#define Serial_GNSS_Out         Serial_GNSS_In
 #define UATSerial               Serial1
 
 enum rst_reason {
@@ -63,8 +64,22 @@ enum nRF52_board_id {
   NRF52_NORDIC_PCA10059,        /* reference low power board */
   NRF52_LILYGO_TECHO_REV_0,     /* 20-8-6 */
   NRF52_LILYGO_TECHO_REV_1,     /* 2020-12-12 */
-  NRF52_LILYGO_TECHO_REV_2      /* 2021-3-16 */
+  NRF52_LILYGO_TECHO_REV_2,     /* 2021-3-26 */
 };
+
+enum nRF52_display_id {
+  EP_UNKNOWN,
+  EP_GDEH0154D67,
+  EP_GDEP015OC1,
+  EP_DEPG0150BN,
+};
+
+typedef struct {
+  uint64_t         id;
+  nRF52_board_id   rev;
+  nRF52_display_id panel;
+  uint8_t          tag;
+} __attribute__((packed)) prototype_entry_t;
 
 struct rst_info {
   uint32_t reason;
@@ -86,13 +101,17 @@ struct rst_info {
 
 #define DFU_MAGIC_SKIP        (0x6d)
 #define BME280_ADDRESS        (0x77)
+#define MPU9250_ADDRESS       (0x68)
+
+#define MIDI_CHANNEL_TRAFFIC  1
+#define MIDI_CHANNEL_VARIO    2
 
 /* Peripherals */
 #define SOC_GPIO_PIN_CONS_RX  _PINNUM(0, 8) // P0.08
 #define SOC_GPIO_PIN_CONS_TX  _PINNUM(0, 6) // P0.06
 
-#define SOC_GPIO_PIN_SWSER_RX _PINNUM(1, 9) // P1.09
-#define SOC_GPIO_PIN_SWSER_TX _PINNUM(1, 8) // P1.08
+#define SOC_GPIO_PIN_GNSS_RX  _PINNUM(1, 9) // P1.09
+#define SOC_GPIO_PIN_GNSS_TX  _PINNUM(1, 8) // P1.08
 
 #define SOC_GPIO_PIN_LED      SOC_UNUSED_PIN
 
@@ -130,7 +149,6 @@ struct rst_info {
                                hw_info.revision == 2 ? SOC_GPIO_LED_TECHO_REV_2_BLUE : \
                                SOC_GPIO_LED_PCA10059_BLUE)
 
-#define SOC_GPIO_PIN_BUZZER   SOC_UNUSED_PIN
 #define SOC_GPIO_PIN_BATTERY  _PINNUM(0, 4) // P0.04 (AIN2)
 
 #define SOC_GPIO_PIN_RX3      SOC_UNUSED_PIN
@@ -152,6 +170,11 @@ struct rst_info {
 #define SOC_GPIO_PIN_PCA10059_MISO      _PINNUM(0, 13) // P0.13
 #define SOC_GPIO_PIN_PCA10059_SCK       _PINNUM(0, 14) // P0.14
 
+#define SOC_GPIO_PIN_WB_MOSI            _PINNUM(1, 12) // P1.12
+#define SOC_GPIO_PIN_WB_MISO            _PINNUM(1, 13) // P0.13
+#define SOC_GPIO_PIN_WB_SCK             _PINNUM(1, 11) // P1.11
+#define SOC_GPIO_PIN_WB_SS              _PINNUM(1, 10) // P1.10
+
 /* NRF905 */
 #define SOC_GPIO_PIN_TXE      SOC_UNUSED_PIN
 #define SOC_GPIO_PIN_CE       SOC_UNUSED_PIN
@@ -168,8 +191,14 @@ struct rst_info {
 #define SOC_GPIO_PIN_DIO1     _PINNUM(0, 20) // P0.20
 #define SOC_GPIO_PIN_BUSY     _PINNUM(0, 17) // P0.17
 
+#define SOC_GPIO_PIN_WB_RST   _PINNUM(1,  6) // P1.06
+#define SOC_GPIO_PIN_WB_DIO1  _PINNUM(1, 15) // P1.15
+#define SOC_GPIO_PIN_WB_BUSY  _PINNUM(1, 14) // P1.14
+
 /* RF antenna switch */
 #define SOC_GPIO_PIN_ANT_RXTX SOC_UNUSED_PIN
+#define SOC_GPIO_PIN_WB_TXEN  _PINNUM(1,  7) // P1.07
+#define SOC_GPIO_PIN_WB_RXEN  _PINNUM(1,  5) // P1.05
 
 /* I2C */
 #define SOC_GPIO_PIN_SDA      _PINNUM(0, 26) // P0.26
@@ -182,8 +211,9 @@ struct rst_info {
 #define SOC_GPIO_PIN_PCA10059_BUTTON    _PINNUM(1,  6) // P1.06
 #define SOC_GPIO_PIN_PAD                _PINNUM(0, 11) // P0.11
 
-#define SOC_GPIO_PIN_BUTTON   SOC_GPIO_PIN_TECHO_REV_0_BUTTON
-//#define SOC_GPIO_PIN_BUTTON   SOC_GPIO_PIN_PCA10059_BUTTON
+#define SOC_GPIO_PIN_BUTTON   (nRF52_board == NRF52_NORDIC_PCA10059 ? \
+                               SOC_GPIO_PIN_PCA10059_BUTTON :         \
+                               SOC_GPIO_PIN_TECHO_REV_0_BUTTON)
 
 /* E-paper */
 #define SOC_GPIO_PIN_EPD_MISO _PINNUM(1,  7) // P1.07
@@ -216,6 +246,7 @@ struct rst_info {
 #define EXCLUDE_WIFI
 #define EXCLUDE_CC13XX
 //#define EXCLUDE_TEST_MODE
+#define EXCLUDE_SOFTRF_HEARTBEAT
 //#define EXCLUDE_LK8EX1
 
 #define EXCLUDE_GNSS_UBLOX
@@ -228,6 +259,7 @@ struct rst_info {
 /* -------------------------------------- */
 #define USE_NMEALIB
 #define USE_NMEA_CFG               //  +    kb
+#define USE_SKYVIEW_CFG            //  +    kb
 //#define EXCLUDE_BMP180           //  -    kb
 //#define EXCLUDE_BMP280           //  -    kb
 //#define EXCLUDE_MPL3115A2        //  -    kb
@@ -242,19 +274,37 @@ struct rst_info {
 
 //#define USE_OLED                 //  +    kb
 //#define EXCLUDE_OLED_BARO_PAGE
+//#define EXCLUDE_OLED_049
 #define USE_EPAPER                 //  +    kb
+#define USE_EPD_TASK
+#define USE_TIME_SLOTS
 
 /* Experimental */
 //#define USE_WEBUSB_SERIAL
 //#define USE_WEBUSB_SETTINGS
 //#define USE_USB_MIDI
-//#define USE_BLE_MIDI
+#define USE_BLE_MIDI
+//#define USE_PWM_SOUND
+//#define USE_GDL90_MSL
+//#define USE_IBEACON
 //#define EXCLUDE_NUS
-#define EXCLUDE_BOARD_SELF_DETECT
+//#define EXCLUDE_IMU
+#define USE_OGN_ENCRYPTION
 
-/* SoftRF/nRF52 PFLAU NMEA sentence extension(s) */
-//#define PFLAU_EXT1_FMT  ",%06X,%d,%d,%d,%d"
-//#define PFLAU_EXT1_ARGS ,ThisAircraft.addr,settings->rf_protocol,rx_packets_counter,tx_packets_counter,(int)(Battery_voltage()*100)
+/* FTD-012 data port protocol version 8 and 9 */
+#define PFLAA_EXT1_FMT  ",%d,%d,%d"
+#define PFLAA_EXT1_ARGS ,Container[i].no_track,data_source,Container[i].rssi
+
+#if defined(USE_PWM_SOUND)
+#define SOC_GPIO_PIN_BUZZER   (hw_info.rf != RF_IC_SX1262 ? SOC_UNUSED_PIN           : \
+                               hw_info.revision == 1 ? SOC_GPIO_PIN_TECHO_REV_1_DIO0 : \
+                               hw_info.revision == 2 ? SOC_GPIO_PIN_TECHO_REV_2_DIO0 : \
+                               SOC_UNUSED_PIN)
+
+#define ALARM_TONE_HZ         2480 // seems to be the best value for 27 mm piezo buzzer
+#else
+#define SOC_GPIO_PIN_BUZZER   SOC_UNUSED_PIN
+#endif /* USE_PWM_SOUND */
 
 #if !defined(EXCLUDE_LED_RING)
 #include <Adafruit_NeoPixel.h>
@@ -267,13 +317,10 @@ extern Uart Serial2;
 #endif
 
 extern PCF8563_Class *rtc;
+extern const char *nRF52_Device_Manufacturer, *nRF52_Device_Model, *Hardware_Rev[];
 
 #if defined(USE_EPAPER)
-#include <GxEPD2_BW.h>
-
 typedef void EPD_Task_t;
-
-extern GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> *display;
 #endif /* USE_EPAPER */
 
 #endif /* PLATFORM_NRF52_H */

@@ -1,6 +1,6 @@
 /*
  * TrafficHelper.h
- * Copyright (C) 2018-2021 Linar Yusupov
+ * Copyright (C) 2018-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,13 +21,14 @@
 
 #include "system/SoC.h"
 
-#define ALARM_ZONE_NONE       10000 /* zone range is 1000m <-> 10000m */
-#define ALARM_ZONE_LOW        1000  /* zone range is  700m <->  1000m */
+#define ALARM_ZONE_NONE       25500 /* zone range is 1000m <-> 25500m */
+#define ALARM_ZONE_LOW        2000  /* zone range is  700m <->  2000m */
 #define ALARM_ZONE_IMPORTANT  700   /* zone range is  400m <->   700m */
 #define ALARM_ZONE_URGENT     400   /* zone range is    0m <->   400m */
 
 #define VERTICAL_SEPARATION         300 /* metres */
-#define VERTICAL_VISIBILITY_RANGE   500 /* value from FLARM data port specs */
+#define VERTICAL_VISIBILITY_RANGE   500 /* value from Classic FLARM data port specs */
+#define VERTICAL_VISIBILITY_MAX    2000 /* limit for PowerFLARM */
 
 #define TRAFFIC_VECTOR_UPDATE_INTERVAL 2 /* seconds */
 #define TRAFFIC_UPDATE_INTERVAL_MS (TRAFFIC_VECTOR_UPDATE_INTERVAL * 1000)
@@ -54,6 +55,7 @@ void Traffic_setup(void);
 void Traffic_loop(void);
 void ClearExpired(void);
 void Traffic_Update(ufo_t *);
+bool Traffic_Add(ufo_t *);
 int  Traffic_Count(void);
 
 int  traffic_cmp_by_distance(const void *, const void *);

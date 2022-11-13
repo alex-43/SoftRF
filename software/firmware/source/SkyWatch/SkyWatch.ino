@@ -1,6 +1,6 @@
 /*
  * SkyWatch(.ino) firmware
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This firmware is essential part of the SoftRF project.
  *
@@ -39,22 +39,28 @@
 #include "NMEAHelper.h"
 #include "TrafficHelper.h"
 #include "WiFiHelper.h"
+#include "OTAHelper.h"
 #include "WebHelper.h"
 #include "BatteryHelper.h"
 #include "GDL90Helper.h"
 #include "TFTHelper.h"
 #include "BaroHelper.h"
+#include "GNSSHelper.h"
 
 ufo_t ThisDevice;
 hardware_info_t hw_info = {
-  .model    = SOFTRF_MODEL_WEBTOP,
+  .model    = SOFTRF_MODEL_WEBTOP_SERIAL,
   .revision = HW_REV_UNKNOWN,
   .soc      = SOC_NONE,
   .rf       = RF_IC_NONE,
   .gnss     = GNSS_MODULE_NONE,
   .baro     = BARO_MODULE_NONE,
   .display  = DISPLAY_NONE,
-  .storage  = STORAGE_NONE
+  .storage  = STORAGE_NONE,
+  .rtc      = RTC_NONE,
+  .imu      = IMU_NONE,
+  .pmu      = PMU_NONE,
+  .slave    = SOFTRF_MODEL_UNKNOWN,
 };
 
 #if DEBUG_POWER
@@ -88,7 +94,7 @@ void setup()
   hw_info.soc = SoC_setup(); // Has to be very first procedure in the execution order
 
   delay(300);
-  Serial.begin(SERIAL_OUT_BR, SERIAL_OUT_BITS);
+
   Serial.println();
 
   Serial.println();
@@ -97,7 +103,7 @@ void setup()
   Serial.print(SoC->name);
   Serial.print(F(" FW.REV: " SKYWATCH_FIRMWARE_VERSION " DEV.ID: "));
   Serial.println(String(SoC->getChipId(), HEX));
-  Serial.println(F("Copyright (C) 2019-2021 Linar Yusupov. All rights reserved."));
+  Serial.println(F("Copyright (C) 2019-2022 Linar Yusupov. All rights reserved."));
   Serial.flush();
 
   EEPROM_setup();
@@ -111,20 +117,35 @@ void setup()
   Battery_setup();
   SoC->Button_setup();
 
-  hw_info.rf = RF_IC_SX1276;
-  hw_info.baro = Baro_setup();
+  hw_info.rf      = RF_IC_SX1276;
+  hw_info.baro    = Baro_setup();
   hw_info.display = TFT_setup();
+
+  if (hw_info.model == SOFTRF_MODEL_WEBTOP_USB &&
+      settings->m.connection == CON_USB) {
+    hw_info.gnss = GNSS_setup();
+#if defined(ENABLE_USB_HOST_DEBUG)
+    if (hw_info.gnss == GNSS_MODULE_NONE) {
+      Serial_GNSS_In.updateBaudRate(SERIAL_OUT_BR);
+    }
+#endif
+  }
+
+  if (SoC->USB_ops) {
+     SoC->USB_ops->setup();
+  }
 
   WiFi_setup();
 
-  if (SoC->Bluetooth) {
-     SoC->Bluetooth->setup();
+  if (SoC->Bluetooth_ops) {
+     SoC->Bluetooth_ops->setup();
   }
 
   if (SoC->DB_init()) {
-    hw_info.storage = STORAGE_uSD;
+    hw_info.storage = STORAGE_CARD;
   }
 
+  OTA_setup();
   Web_setup();
   Traffic_setup();
 
@@ -151,15 +172,19 @@ void setup()
       SerialInput.write(on_msg);
       SerialInput.flush();
       break;
+#if !defined(CONFIG_IDF_TARGET_ESP32S2)
     case CON_SERIAL_AUX:
       Serial.write(on_msg);
       Serial.flush();
       break;
+#endif /* CONFIG_IDF_TARGET_ESP32S2 */
     case CON_NONE:
     default:
       break;
     }
   }
+
+  SoC->post_init();
 
   SoC->WDT_setup();
 }
@@ -191,8 +216,12 @@ void normal_loop()
     break;
   }
 
-  if (SoC->Bluetooth) {
-    SoC->Bluetooth->loop();
+  if (SoC->Bluetooth_ops) {
+    SoC->Bluetooth_ops->loop();
+  }
+
+  if (SoC->USB_ops) {
+    SoC->USB_ops->loop();
   }
 
   Traffic_loop();
@@ -205,6 +234,9 @@ void normal_loop()
 
   // Handle Web
   Web_loop();
+
+  // Handle OTA update.
+  OTA_loop();
 
   SoC->Button_loop();
 
@@ -261,10 +293,12 @@ void shutdown(const char *msg)
       SerialInput.write(off_msg);
       SerialInput.flush();
       break;
+#if !defined(CONFIG_IDF_TARGET_ESP32S2)
     case CON_SERIAL_AUX:
       Serial.write(off_msg);
       Serial.flush();
       break;
+#endif /* CONFIG_IDF_TARGET_ESP32S2 */
     case CON_NONE:
     default:
       break;
@@ -276,6 +310,14 @@ void shutdown(const char *msg)
   Web_fini();
 
   SoC->DB_fini();
+
+  if (SoC->Bluetooth_ops) {
+     SoC->Bluetooth_ops->fini();
+  }
+
+  if (SoC->USB_ops) {
+     SoC->USB_ops->fini();
+  }
 
   WiFi_fini();
 

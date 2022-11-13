@@ -17,6 +17,11 @@
 
 #if defined(ARDUINO_ARCH_ESP32)
 
+#include "sdkconfig.h" // this sets useful config symbols, like CONFIG_IDF_TARGET_ESP32C3
+
+// ESP32C3/S3 I2S is not supported yet due to significant changes to interface
+#if !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32S3)
+
 #include <string.h>
 #include <stdio.h>
 #include "stdlib.h"
@@ -26,22 +31,35 @@
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
 
+#if ESP_IDF_VERSION_MAJOR>=4
+#include "esp_intr_alloc.h"
+#else
 #include "esp_intr.h"
+#endif
+
 #include "rom/ets_sys.h"
 #include "soc/gpio_reg.h"
 #include "soc/gpio_sig_map.h"
 #include "soc/io_mux_reg.h"
 #include "soc/rtc_cntl_reg.h"
 #include "soc/i2s_struct.h"
+#if defined(CONFIG_IDF_TARGET_ESP32)
+/* included here for ESP-IDF v4.x compatibility */
 #include "soc/dport_reg.h"
+#endif
 #include "soc/sens_reg.h"
 #include "driver/gpio.h"
 #include "driver/i2s.h"
+#if defined(CONFIG_IDF_TARGET_ESP32)
 #include "driver/dac.h"
+#endif
 #include "Esp32_i2s.h"
 #include "esp32-hal.h"
 
+#if ESP_IDF_VERSION_MAJOR<=4
 #define I2S_BASE_CLK (160000000L)
+#endif
+
 #define ESP32_REG(addr) (*((volatile uint32_t*)(0x3FF00000+(addr))))
 
 #define I2S_DMA_QUEUE_SIZE      16
@@ -87,10 +105,17 @@ typedef struct {
 
 static uint8_t i2s_silence_buf[I2S_DMA_SILENCE_LEN];
 
+#if !defined(CONFIG_IDF_TARGET_ESP32S2) && !defined(CONFIG_IDF_TARGET_ESP32C3)
+// (I2S_NUM_MAX == 2)
 static i2s_bus_t I2S[2] = {
     {&I2S0, -1, -1, -1, -1, 0, NULL, NULL, i2s_silence_buf, I2S_DMA_SILENCE_LEN, NULL, I2S_DMA_QUEUE_SIZE, 0, 0},
     {&I2S1, -1, -1, -1, -1, 0, NULL, NULL, i2s_silence_buf, I2S_DMA_SILENCE_LEN, NULL, I2S_DMA_QUEUE_SIZE, 0, 0}
 };
+#else
+static i2s_bus_t I2S[I2S_NUM_MAX] = {
+    {&I2S0, -1, -1, -1, -1, 0, NULL, NULL, i2s_silence_buf, I2S_DMA_SILENCE_LEN, NULL, I2S_DMA_QUEUE_SIZE, 0, 0}
+};
+#endif
 
 void IRAM_ATTR i2sDmaISR(void* arg);
 bool i2sInitDmaItems(uint8_t bus_num);
@@ -165,7 +190,11 @@ esp_err_t i2sSetClock(uint8_t bus_num, uint8_t div_num, uint8_t div_b, uint8_t d
         return ESP_FAIL;
     }
     i2s_dev_t* i2s = I2S[bus_num].bus;
+#if !defined(CONFIG_IDF_TARGET_ESP32S2) && !defined(CONFIG_IDF_TARGET_ESP32C3)
     i2s->clkm_conf.clka_en = 0;
+#else
+    i2s->clkm_conf.clk_sel = 2;
+#endif
     i2s->clkm_conf.clkm_div_a = div_a;
     i2s->clkm_conf.clkm_div_b = div_b;
     i2s->clkm_conf.clkm_div_num = div_num;
@@ -221,9 +250,11 @@ void i2sSetPins(uint8_t bus_num, int8_t out, int8_t ws, int8_t bck, int8_t in) {
         return;
     }
 
+#if ESP_IDF_VERSION_MAJOR<4 || SOC_I2S_SUPPORTS_DAC
     if ((ws >= 0 && I2S[bus_num].ws == -1) || (bck >= 0 && I2S[bus_num].bck == -1) || (out >= 0 && I2S[bus_num].out == -1)) {
         i2sSetDac(bus_num, false, false);
     }
+#endif
 
     if (ws >= 0) {
         if (I2S[bus_num].ws != ws) {
@@ -232,7 +263,11 @@ void i2sSetPins(uint8_t bus_num, int8_t out, int8_t ws, int8_t bck, int8_t in) {
             }
             I2S[bus_num].ws = ws;
             pinMode(ws, OUTPUT);
+#if !defined(CONFIG_IDF_TARGET_ESP32S2) && !defined(CONFIG_IDF_TARGET_ESP32C3)
             gpio_matrix_out(ws, bus_num?I2S1O_WS_OUT_IDX:I2S0O_WS_OUT_IDX, false, false);
+#else
+            gpio_matrix_out(ws, I2S0O_WS_OUT_IDX, false, false);
+#endif
         }
     } else if (I2S[bus_num].ws >= 0) {
         gpio_matrix_out(I2S[bus_num].ws, 0x100, false, false);
@@ -246,7 +281,11 @@ void i2sSetPins(uint8_t bus_num, int8_t out, int8_t ws, int8_t bck, int8_t in) {
             }
             I2S[bus_num].bck = bck;
             pinMode(bck, OUTPUT);
+#if !defined(CONFIG_IDF_TARGET_ESP32S2) && !defined(CONFIG_IDF_TARGET_ESP32C3)
             gpio_matrix_out(bck, bus_num?I2S1O_BCK_OUT_IDX:I2S0O_BCK_OUT_IDX, false, false);
+#else
+            gpio_matrix_out(bck, I2S0O_BCK_OUT_IDX, false, false);
+#endif
         }
     } else if (I2S[bus_num].bck >= 0) {
         gpio_matrix_out(I2S[bus_num].bck, 0x100, false, false);
@@ -260,7 +299,12 @@ void i2sSetPins(uint8_t bus_num, int8_t out, int8_t ws, int8_t bck, int8_t in) {
             }
             I2S[bus_num].out = out;
             pinMode(out, OUTPUT);
+#if !defined(CONFIG_IDF_TARGET_ESP32S2) && !defined(CONFIG_IDF_TARGET_ESP32C3)
+//            (I2S_NUM_MAX == 2)
             gpio_matrix_out(out, bus_num?I2S1O_DATA_OUT23_IDX:I2S0O_DATA_OUT23_IDX, false, false);
+#else
+            gpio_matrix_out(out, I2S0O_DATA_OUT23_IDX, false, false);
+#endif
         }
     } else if (I2S[bus_num].out >= 0) {
         gpio_matrix_out(I2S[bus_num].out, 0x100, false, false);
@@ -288,9 +332,13 @@ void i2sInit(uint8_t bus_num, uint32_t bits_per_sample, uint32_t sample_rate, i2
         return;
     }
 
+#if !defined(CONFIG_IDF_TARGET_ESP32S2) && !defined(CONFIG_IDF_TARGET_ESP32C3)
+// (I2S_NUM_MAX == 2)
     if (bus_num) {
         periph_module_enable(PERIPH_I2S1_MODULE);
-    } else {
+    } else
+#endif
+    {
         periph_module_enable(PERIPH_I2S0_MODULE);
     }
 
@@ -330,8 +378,10 @@ void i2sInit(uint8_t bus_num, uint32_t bits_per_sample, uint32_t sample_rate, i2
     i2s->lc_conf.indscr_burst_en = 0;
     i2s->lc_conf.out_eof_mode = 1;
 
+#if !defined(CONFIG_IDF_TARGET_ESP32S2) && !defined(CONFIG_IDF_TARGET_ESP32C3)
     i2s->pdm_conf.pcm2pdm_conv_en = 0;
     i2s->pdm_conf.pdm2pcm_conv_en = 0;
+#endif
     // SET_PERI_REG_BITS(RTC_CNTL_CLK_CONF_REG, RTC_CNTL_SOC_CLK_SEL, 0x1, RTC_CNTL_SOC_CLK_SEL_S);
 
 
@@ -360,13 +410,21 @@ void i2sInit(uint8_t bus_num, uint32_t bits_per_sample, uint32_t sample_rate, i2
 
     i2s->fifo_conf.tx_fifo_mod_force_en = 1;
 
+#if !defined(CONFIG_IDF_TARGET_ESP32S2) && !defined(CONFIG_IDF_TARGET_ESP32C3)
     i2s->pdm_conf.rx_pdm_en = 0;
     i2s->pdm_conf.tx_pdm_en = 0;
+#endif
 
     i2sSetSampleRate(bus_num, sample_rate, bits_per_sample);
 
     //  enable intr in cpu // 
+#if !defined(CONFIG_IDF_TARGET_ESP32S2) && !defined(CONFIG_IDF_TARGET_ESP32C3)
+//    (I2S_NUM_MAX == 2)
     esp_intr_alloc(bus_num?ETS_I2S1_INTR_SOURCE:ETS_I2S0_INTR_SOURCE, ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_LEVEL1, &i2sDmaISR, &I2S[bus_num], &I2S[bus_num].isr_handle);
+#else
+    esp_intr_alloc(ETS_I2S0_INTR_SOURCE, ESP_INTR_FLAG_IRAM | ESP_INTR_FLAG_LEVEL1, &i2sDmaISR, &I2S[bus_num], &I2S[bus_num].isr_handle);
+#endif
+
     //  enable send intr
     i2s->int_ena.out_eof = 1;
     i2s->int_ena.out_dscr_err = 1;
@@ -480,5 +538,5 @@ size_t i2sWrite(uint8_t bus_num, uint8_t* data, size_t len, bool copy, bool free
     return index;
 }
 
-
-#endif
+#endif // !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32S3)
+#endif // defined(ARDUINO_ARCH_ESP32)

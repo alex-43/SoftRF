@@ -307,10 +307,13 @@ void GxEPD2_154::_PowerOn()
 
 void GxEPD2_154::_PowerOff()
 {
-  _writeCommand(0x22);
-  _writeData(0xc3);
-  _writeCommand(0x20);
-  _waitWhileBusy("_PowerOff", power_off_time);
+  if (_power_is_on)
+  {
+    _writeCommand(0x22);
+    _writeData(0xc0);
+    _writeCommand(0x20);
+    _waitWhileBusy("_PowerOff", power_off_time);
+  }
   _power_is_on = false;
   _using_partial_mode = false;
 }
@@ -381,4 +384,13 @@ void GxEPD2_154::_Update_Part()
   _writeCommand(0x20);
   _waitWhileBusy("_Update_Part", partial_refresh_time);
   _writeCommand(0xff);
+}
+
+bool GxEPD2_154::probe()
+{
+  if (_timeout_expired) {
+    return false;
+  } else {
+    return true;
+  }
 }

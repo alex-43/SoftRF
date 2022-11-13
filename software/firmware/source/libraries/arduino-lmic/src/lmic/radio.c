@@ -134,23 +134,26 @@
 // #define RegAgcThresh3                              0x46 // common
 // #define RegPllHop                                  0x4B // common
 // #define RegTcxo                                    0x58 // common
-#define SX1272_RegTcxo                             0x58 // common
-#define SX1276_RegTcxo                             0x4B // common
-#define SX1272_RegPaDac                            0x5A // common
-#define SX1276_RegPaDac                            0x4D // common
+#define SX1272_RegTcxo                             0x58
+#define SX1276_RegTcxo                             0x4B
+#define SX1272_RegPaDac                            0x5A
+#define SX1276_RegPaDac                            0x4D
 // #define RegPll                                     0x5C // common
 // #define RegPllLowPn                                0x5E // common
 // #define RegFormerTemp                              0x6C // common
-// #define RegBitRateFrac                             0x70 // common
+#define SX1272_RegBitRateFrac                      0x70
+#define SX1276_RegBitRateFrac                      0x5D
 
 #ifdef CFG_sx1276_radio
 #define RADIO_VERSION               0x12
 #define RegPaDac                    SX1276_RegPaDac
 #define RegTcxo                     SX1276_RegTcxo
+#define RegBitRateFrac              SX1276_RegBitRateFrac
 #elif CFG_sx1272_radio
 #define RADIO_VERSION               0x22
 #define RegPaDac                    SX1272_RegPaDac
 #define RegTcxo                     SX1272_RegTcxo
+#define RegBitRateFrac              SX1272_RegBitRateFrac
 #endif
 
 // ----------------------------------------
@@ -502,11 +505,13 @@ static void txfsk () {
     case RF_BITRATE_38400:
       writeReg(FSKRegBitrateMsb, 0x03); // 38400 bps
       writeReg(FSKRegBitrateLsb, 0x41);
+      writeReg(RegBitRateFrac,   0x05);
       break;
     case RF_BITRATE_100KBPS:
     default:
-      writeReg(FSKRegBitrateMsb, 0x01); // 100kbps
+      writeReg(FSKRegBitrateMsb, 0x01); // 100 kbps
       writeReg(FSKRegBitrateLsb, 0x40);
+      writeReg(RegBitRateFrac,   0x00);
       break;
     }
 
@@ -923,7 +928,7 @@ static void rxfsk (u1_t rxmode) {
 }
 
 static void startrx (u1_t rxmode) {
-//    ASSERT( (readReg(RegOpMode) & OPMODE_MASK) == OPMODE_SLEEP );
+    ASSERT( (readReg(RegOpMode) & OPMODE_MASK) == OPMODE_SLEEP );
     if(getSf(LMIC.rps) == FSK) { // FSK modem
         rxfsk(rxmode);
     } else { // LoRa modem
@@ -956,7 +961,8 @@ void radio_init () {
     opmode(OPMODE_SLEEP);
 
     // sanity check, read version number
-    ASSERT( readReg(RegVersion) == RADIO_VERSION );
+    u1_t r_ver = readReg(RegVersion);
+    ASSERT( r_ver == RADIO_VERSION || r_ver == RADIO_VERSION+1 );
 
     // seed 15-byte randomness via noise rssi
     rxlora(RXMODE_RSSI);
@@ -1182,14 +1188,13 @@ void os_radio (u1_t mode) {
         break;
 
       case RADIO_TX:
-#if defined(ENERGIA_ARCH_CC13XX) || defined(ENERGIA_ARCH_CC13X2) || defined(RASPBERRY_PI)
-        delay(1);
-#endif
+        if ((readReg(RegOpMode) & OPMODE_MASK) != OPMODE_SLEEP) opmode(OPMODE_SLEEP);
         // transmit frame now
         starttx(); // buf=LMIC.frame, len=LMIC.dataLen
         break;
 
       case RADIO_RX:
+        if ((readReg(RegOpMode) & OPMODE_MASK) != OPMODE_SLEEP) opmode(OPMODE_SLEEP);
         // receive frame now (exactly at rxtime)
         startrx(RXMODE_SINGLE); // buf=LMIC.frame, time=LMIC.rxtime, timeout=LMIC.rxsyms
         break;

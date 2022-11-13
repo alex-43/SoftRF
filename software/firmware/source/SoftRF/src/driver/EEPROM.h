@@ -1,6 +1,6 @@
 /*
  * EEPROMHelper.h
- * Copyright (C) 2016-2021 Linar Yusupov
+ * Copyright (C) 2016-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,18 +19,31 @@
 #ifndef EEPROMHELPER_H
 #define EEPROMHELPER_H
 
+#ifdef __cplusplus
 #include "../system/SoC.h"
+#endif /* __cplusplus */
 
 #if !defined(EXCLUDE_EEPROM)
 #if defined(ENERGIA_ARCH_CC13XX) || defined(ENERGIA_ARCH_CC13X2)
 #include <EEPROM_CC13XX.h>
+#elif defined(ARDUINO_ARCH_SAMD)
+#include <FlashAsEEPROM.h>
 #else
+#ifdef __cplusplus
 #include <EEPROM.h>
+#endif /* __cplusplus */
 #endif /* CC13XX or CC13X2 */
 #endif /* EXCLUDE_EEPROM */
 
 #define SOFTRF_EEPROM_MAGIC   0xBABADEDA
-#define SOFTRF_EEPROM_VERSION 0x0000005F
+#define SOFTRF_EEPROM_VERSION 0x00000060
+
+enum
+{
+	EEPROM_EXT_LOAD,
+	EEPROM_EXT_DEFAULTS,
+	EEPROM_EXT_STORE
+};
 
 typedef struct Settings {
     uint8_t  mode;
@@ -59,18 +72,15 @@ typedef struct Settings {
     uint8_t  json:2;
 
     uint8_t  power_save;
+
     int8_t   freq_corr; /* +/-, kHz */
-    uint8_t  resvd23456;
-    uint8_t  resvd7;
-    uint8_t  resvd8;
-    uint8_t  resvd9;
-    uint8_t  resvd10;
-    uint8_t  resvd11;
-    uint8_t  resvd12;
-    uint8_t  resvd13;
-    uint8_t  resvd14;
-    uint8_t  resvd15;
-    uint8_t  resvd16;
+    uint8_t  resvd2;
+    uint8_t  resvd3;
+    uint8_t  resvd4;
+
+    /* Use a key provided by (local) gliding contest organizer */
+    uint32_t igc_key[4];
+
 } __attribute__((packed)) settings_t;
 
 typedef struct EEPROM_S {

@@ -1,6 +1,6 @@
 /*
  * TFTHelper.cpp
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@
 byte TFT_setup()                  {return DISPLAY_NONE;}
 void TFT_loop()                   {}
 void TFT_fini(const char *msg)    {}
+void TFT_Mode_Cycle()             {}
 #else
 
 #include <SPI.h>
@@ -45,7 +46,7 @@ bool TFT_vmode_updated = true;
 
 static Gesture_t gesture = { false, {0,0}, {0,0} };
 
-const char SoftRF_text[]   = "SoftRF";
+const char SoftRF_text1[]   = "SoftRF";
 
 void TFT_off()
 {
@@ -73,7 +74,10 @@ void TFT_wakeup()
 
 void TFT_backlight_init(void)
 {
-    ledcAttachPin(SOC_GPIO_PIN_TWATCH_TFT_BL, 1);
+    int bl_pin = (hw_info.model == SOFTRF_MODEL_WEBTOP_USB) ?
+                 SOC_GPIO_PIN_TDONGLE_TFT_BL : SOC_GPIO_PIN_TWATCH_TFT_BL;
+
+    ledcAttachPin(bl_pin, BACKLIGHT_CHANNEL);
     ledcSetup(BACKLIGHT_CHANNEL, 12000, 8);
 }
 
@@ -117,15 +121,30 @@ byte TFT_setup()
 
     SPI.begin(SOC_GPIO_PIN_TWATCH_TFT_SCK, SOC_GPIO_PIN_TWATCH_TFT_MISO,
               SOC_GPIO_PIN_TWATCH_TFT_MOSI, -1);
+  } else if (hw_info.model == SOFTRF_MODEL_WEBTOP_USB) {
+    SPI.begin(SOC_GPIO_PIN_TDONGLE_SCK,  SOC_GPIO_PIN_TDONGLE_MISO,
+              SOC_GPIO_PIN_TDONGLE_MOSI, SOC_GPIO_PIN_TDONGLE_SS);
 
+#if LV_HOR_RES == 135
+    TFT_view_mode = VIEW_MODE_STATUS;
+#endif /* LV_HOR_RES */
+  }
+
+  {
     tft = new TFT_eSPI(LV_HOR_RES, LV_VER_RES);
     tft->init();
+
+#if LV_HOR_RES != 135
     tft->setRotation(0);
+#else
+    tft->setRotation(1);
+#endif /* LV_HOR_RES */
 
     sprite = new TFT_eSprite(tft);
     sprite->setColorDepth(1);
 
-    if (hw_info.baro == BARO_MODULE_NONE) {
+    if (hw_info.model == SOFTRF_MODEL_SKYWATCH &&
+        hw_info.baro  == BARO_MODULE_NONE) {
       pinMode(SOC_GPIO_PIN_TWATCH_TP_IRQ, INPUT);
       Wire.begin(SOC_GPIO_PIN_TWATCH_TP_SDA, SOC_GPIO_PIN_TWATCH_TP_SCL);
       tp = new FT5206_Class();
@@ -150,12 +169,16 @@ byte TFT_setup()
     tft->setTextSize(2);
     tft->setTextColor(TFT_WHITE, TFT_NAVY);
 
-    uint16_t tbw = tft->textWidth(SoftRF_text);
+    uint16_t tbw = tft->textWidth(SoftRF_text1);
     uint16_t tbh = tft->fontHeight();
     tft->setCursor((tft->width() - tbw)/2, (tft->height() - tbh)/2);
-    tft->println(SoftRF_text);
+    tft->println(SoftRF_text1);
 
-    rval = DISPLAY_TFT_TTGO;
+#if LV_HOR_RES != 135
+    rval = DISPLAY_TFT_TTGO_240;
+#else
+    rval = DISPLAY_TFT_TTGO_135;
+#endif /* LV_HOR_RES */
 
     TFT_status_setup();
     TFT_radar_setup();
@@ -170,7 +193,8 @@ void TFT_loop()
 {
   switch (hw_info.display)
   {
-  case DISPLAY_TFT_TTGO:
+  case DISPLAY_TFT_TTGO_240:
+  case DISPLAY_TFT_TTGO_135:
     if (tft) {
 
       if (isTimeToDisplay()) {
@@ -298,7 +322,8 @@ void TFT_fini(const char *msg)
 {
   switch (hw_info.display)
   {
-  case DISPLAY_TFT_TTGO:
+  case DISPLAY_TFT_TTGO_240:
+  case DISPLAY_TFT_TTGO_135:
     if (tft) {
         int level;
 
@@ -345,7 +370,7 @@ void TFT_fini(const char *msg)
 
 void TFT_Up()
 {
-  if (hw_info.display == DISPLAY_TFT_TTGO) {
+  if (hw_info.display == DISPLAY_TFT_TTGO_240) {
     switch (TFT_view_mode)
     {
     case VIEW_MODE_RADAR:
@@ -367,7 +392,7 @@ void TFT_Up()
 
 void TFT_Down()
 {
-  if (hw_info.display == DISPLAY_TFT_TTGO) {
+  if (hw_info.display == DISPLAY_TFT_TTGO_240) {
     switch (TFT_view_mode)
     {
     case VIEW_MODE_RADAR:
@@ -415,4 +440,21 @@ void TFT_Message(const char *msg1, const char *msg2)
     }
   }
 }
+
+void TFT_Mode_Cycle()
+{
+  TFT_view_mode++;
+
+  if (TFT_view_mode > VIEW_MODE_TIME) {
+    TFT_view_mode = VIEW_MODE_STATUS;
+  }
+
+  TFT_vmode_updated = true;
+}
+
+void TFT_info1()
+{
+
+}
+
 #endif /* EXCLUDE_TFT */

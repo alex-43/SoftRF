@@ -1,6 +1,6 @@
 /*
  * Platform_PSoC4.cpp
- * Copyright (C) 2020-2021 Linar Yusupov
+ * Copyright (C) 2020-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,7 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#if defined(__ASR6501__)
+#if defined(__ASR6501__) || defined(ARDUINO_ARCH_ASR650X)
 
 #include <SPI.h>
 #include <Wire.h>
@@ -34,7 +34,9 @@
 #include "../protocol/data/D1090.h"
 
 #include <innerWdt.h>
+#if defined(__ASR6501__) && !defined(ARDUINO_ARCH_ASR650X)
 #include <lorawan_port.h>
+#endif /* __ASR6501__ */
 
 // SX1262 pin mapping
 lmic_pinmap lmic_pins = {
@@ -46,6 +48,13 @@ lmic_pinmap lmic_pins = {
     .busy = SOC_GPIO_PIN_BUSY,
     .tcxo = LMIC_UNUSED_PIN,
 };
+
+#if !defined(CubeCell_GPS)
+softSerial swSer(SOC_GPIO_PIN_GNSS_TX, SOC_GPIO_PIN_GNSS_RX);
+
+extern uint8_t GNSSbuf[], setBR[20];
+extern uint8_t makeUBXCFG(uint8_t, uint8_t, uint8_t, const uint8_t *);
+#endif /* CubeCell_GPS */
 
 #if !defined(EXCLUDE_LED_RING)
 // Parameter 1 = number of pixels in strip
@@ -65,7 +74,9 @@ static struct rst_info reset_info = {
   .reason = REASON_DEFAULT_RST,
 };
 
-static uint32_t bootCount = 0;
+static uint32_t bootCount __attribute__ ((section (".noinit")));
+
+static PSoC4_board_id PSoC4_board = PSOC4_HELTEC_CUBECELL_GPS_V1_0; /* default */
 
 typedef enum
 {
@@ -130,63 +141,119 @@ static void PSoC4_setup()
       reset_info.reason = REASON_DEFAULT_RST; break;
   }
 
+#if defined(USE_OLED)
+#if SOC_GPIO_PIN_OLED_PWR != SOC_UNUSED_PIN
   pinMode(SOC_GPIO_PIN_OLED_PWR, OUTPUT);
   digitalWrite(SOC_GPIO_PIN_OLED_PWR, LOW);
+#endif /* SOC_GPIO_PIN_OLED_PWR */
 
+#if SOC_GPIO_PIN_OLED_RST != SOC_UNUSED_PIN
   pinMode(SOC_GPIO_PIN_OLED_RST, OUTPUT);
   digitalWrite(SOC_GPIO_PIN_OLED_RST, HIGH);
+#endif /* SOC_GPIO_PIN_OLED_RST */
+#endif /* USE_OLED */
 
   delay(200);
 
+  /* This test needs a proper pull-up resistors on the I2C bus */
+#if defined(CubeCell_GPS)
   /* SSD1306 I2C OLED probing */
   Wire.begin();
   Wire.beginTransmission(SSD1306_OLED_I2C_ADDR);
   if (Wire.endTransmission() == 0) {
     hw_info.model = SOFTRF_MODEL_MINI;
   }
+#endif /* CubeCell_GPS */
 
+#if defined(USE_OLED)
+#if SOC_GPIO_PIN_OLED_RST != SOC_UNUSED_PIN
   pinMode(SOC_GPIO_PIN_OLED_RST, ANALOG);
+#endif /* SOC_GPIO_PIN_OLED_RST */
+
+#if SOC_GPIO_PIN_OLED_PWR != SOC_UNUSED_PIN
   pinMode(SOC_GPIO_PIN_OLED_PWR, ANALOG);
+#endif /* SOC_GPIO_PIN_OLED_PWR */
+#endif /* USE_OLED */
 
   if (hw_info.model == SOFTRF_MODEL_MINI) {
+    PSoC4_board = PSOC4_HELTEC_CUBECELL_GPS_V1_0;
+
+#if defined(USE_OLED)
+#if SOC_GPIO_PIN_OLED_PWR != SOC_UNUSED_PIN
     pinMode(SOC_GPIO_PIN_OLED_PWR, OUTPUT);
     digitalWrite(SOC_GPIO_PIN_OLED_PWR, LOW);
+#endif /* SOC_GPIO_PIN_OLED_PWR */
 
+#if SOC_GPIO_PIN_OLED_RST != SOC_UNUSED_PIN
     pinMode(SOC_GPIO_PIN_OLED_RST, OUTPUT);
     digitalWrite(SOC_GPIO_PIN_OLED_RST, HIGH);
+#endif /* SOC_GPIO_PIN_OLED_RST */
+#endif /* USE_OLED */
 
     pinMode(SOC_GPIO_PIN_GNSS_PWR, OUTPUT);
     digitalWrite(SOC_GPIO_PIN_GNSS_PWR, LOW);
+  } else {
+    PSoC4_board = (SoC->getChipId() == 0x9b531416) ? PSOC4_AITHINKER_RA_07H : PSOC4_EBYTE_E78;
+
+    pinMode(SOC_GPIO_PIN_ANT_RXTX, OUTPUT);
+    digitalWrite(SOC_GPIO_PIN_ANT_RXTX, HIGH);
+
+    lmic_pins.tcxo = (PSoC4_board == PSOC4_AITHINKER_RA_07H) ? lmic_pins.rst : lmic_pins.tcxo;
   }
+
+  Serial.begin(SERIAL_OUT_BR, SERIAL_OUT_BITS);
 }
 
 static void PSoC4_post_init()
 {
+  Serial.println();
+  Serial.print(F("SoftRF "));
+  Serial.print(hw_info.model == SOFTRF_MODEL_MINI ? F("Mini") : F("Octave"));
+  Serial.println(F(" Edition Power-on Self Test"));
+  Serial.println();
+  Serial.flush();
+
+  Serial.println(F("Built-in components:"));
+
+  Serial.print  (F("RADIO   : "));
+  Serial.println  (hw_info.rf      == RF_IC_SX1262        ? F("PASS") : F("FAIL"));
+  if (hw_info.rf == RF_IC_SX1262) {
+    Serial.print(F("CLK SRC : "));
+    Serial.println(PSoC4_board == PSOC4_AITHINKER_RA_07H  ? F("XTAL") : F("TCXO"));
+  }
+
+#if defined(CubeCell_GPS)
   if (hw_info.model == SOFTRF_MODEL_MINI) {
-    Serial.println();
-    Serial.println(F("CubeCell-GPS Power-on Self Test"));
-    Serial.println();
-    Serial.flush();
-
-    Serial.println(F("Built-in components:"));
-
-    Serial.print(F("RADIO   : "));
-    Serial.println(hw_info.rf      == RF_IC_SX1262        ? F("PASS") : F("FAIL"));
+    if (hw_info.gnss == GNSS_MODULE_AT65) {
+      PSoC4_board = PSOC4_HELTEC_CUBECELL_GPS_V1_1;
+    }
     Serial.print(F("GNSS    : "));
     Serial.println(hw_info.gnss    != GNSS_MODULE_NONE    ? F("PASS") : F("FAIL"));
     Serial.print(F("DISPLAY : "));
     Serial.println(hw_info.display == DISPLAY_OLED_HELTEC ? F("PASS") : F("FAIL"));
-
-    Serial.println();
-    Serial.println(F("External components:"));
-    Serial.print(F("BMx280  : "));
-    Serial.println(hw_info.baro    == BARO_MODULE_BMP280 ? F("PASS") : F("N/A"));
-
-    Serial.println();
-    Serial.println(F("Power-on Self Test is completed."));
-    Serial.println();
-    Serial.flush();
   }
+#endif /* CubeCell_GPS */
+
+  Serial.println();
+  Serial.println(F("External components:"));
+
+#if !defined(CubeCell_GPS)
+  if (hw_info.model != SOFTRF_MODEL_MINI) {
+    Serial.print(F("GNSS    : "));
+    Serial.println(hw_info.gnss    != GNSS_MODULE_NONE    ? F("PASS") : F("N/A"));
+    Serial.print(F("DISPLAY : "));
+    Serial.println(hw_info.display == DISPLAY_OLED_TTGO   ? F("PASS") : F("N/A"));
+  }
+#endif /* NOT CubeCell_GPS */
+
+  Serial.print  (F("BMx280  : "));
+  Serial.println  (hw_info.baro    == BARO_MODULE_BMP280  ? F("PASS") : F("N/A"));
+
+  Serial.println();
+  Serial.println(F("Power-on Self Test is complete."));
+  Serial.println();
+  Serial.flush();
+
 #if defined(USE_OLED)
   OLED_info1();
 #endif /* USE_OLED */
@@ -204,22 +271,38 @@ static void PSoC4_fini(int reason)
   if (hw_info.model == SOFTRF_MODEL_MINI) {
 
     digitalWrite(SOC_GPIO_PIN_GNSS_PWR, HIGH);
-    pinMode(SOC_GPIO_PIN_GNSS_PWR, ANALOG);
+    pinMode(SOC_GPIO_PIN_GNSS_PWR,  ANALOG);
 
-    swSer.end();
+    /* Current HELTEC 'softSerial' implementation has no .end() method available yet */
+#if defined(CubeCell_GPS)
+    Serial_GNSS_In.end();
+#endif /* CubeCell_GPS */
 
     delay(2000);
 
-    pinMode(SOC_GPIO_PIN_OLED_RST, ANALOG);
+#if defined(USE_OLED)
+#if SOC_GPIO_PIN_OLED_RST != SOC_UNUSED_PIN
+    digitalWrite(SOC_GPIO_PIN_OLED_RST, LOW);
+    delay(200);
+    pinMode(SOC_GPIO_PIN_OLED_RST,  ANALOG);
+#endif /* SOC_GPIO_PIN_OLED_RST */
 
+#if SOC_GPIO_PIN_OLED_PWR != SOC_UNUSED_PIN
     digitalWrite(SOC_GPIO_PIN_OLED_PWR, HIGH);
-    pinMode(SOC_GPIO_PIN_OLED_PWR, ANALOG);
+    pinMode(SOC_GPIO_PIN_OLED_PWR,  ANALOG);
+#endif /* SOC_GPIO_PIN_OLED_PWR */
+#endif /* USE_OLED */
 
-    pinMode(SOC_GPIO_PIN_BATTERY, ANALOG);
+    pinMode(SOC_GPIO_PIN_SS,        ANALOG);
+    pinMode(SOC_GPIO_PIN_RST,       ANALOG);
+    pinMode(SOC_GPIO_PIN_BUSY,      ANALOG);
+
+    pinMode(SOC_GPIO_PIN_BATTERY,   ANALOG);
 
 //    settings->nmea_l = false;
 //    settings->nmea_s = false;
 
+    Wire.end();
     Serial.end();
 
     switch (reason)
@@ -227,7 +310,7 @@ static void PSoC4_fini(int reason)
 #if SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN
     case SOFTRF_SHUTDOWN_BUTTON:
     case SOFTRF_SHUTDOWN_LOWBAT:
-      pinMode(SOC_GPIO_PIN_BUTTON, INPUT);
+      pinMode(SOC_GPIO_PIN_BUTTON,  INPUT);
       attachInterrupt(digitalPinToInterrupt(SOC_GPIO_PIN_BUTTON),
                       PSoC4_User_Key_Wakeup, FALLING);
       break;
@@ -240,6 +323,10 @@ static void PSoC4_fini(int reason)
     default:
       break;
     }
+  } else {
+    pinMode(SOC_GPIO_PIN_ANT_RXTX, ANALOG);
+
+    /* TBD */
   }
 
   PSoC4_state = PSOC4_LOW_POWER;
@@ -290,14 +377,17 @@ static String PSoC4_getResetReason()
   }
 }
 
-extern void * _sbrk_r (int);
+extern "C" void * _sbrk_r (int);
+extern "C" void * _sbrk   (int);
 extern int _end;
 
 static uint32_t PSoC4_getFreeHeap()
 {
 //  uint8 *heapend = (uint8 *) _sbrk_r(0);
 //  return CYDEV_HEAP_SIZE - (heapend - (uint8 *) &_end);
-  return 0;
+
+  char top;
+  return &top - reinterpret_cast<char*>(_sbrk(0));
 }
 
 static long PSoC4_random(long howsmall, long howBig)
@@ -337,16 +427,27 @@ static bool PSoC4_EEPROM_begin(size_t size)
   return true;
 }
 
-static void PSoC4_EEPROM_extension()
+static void PSoC4_EEPROM_extension(int cmd)
 {
-  if (settings->nmea_out == NMEA_USB || settings->nmea_out == NMEA_BLUETOOTH) {
-    settings->nmea_out = NMEA_UART;
-  }
-  if (settings->gdl90 == GDL90_USB || settings->gdl90 == GDL90_BLUETOOTH) {
-    settings->gdl90 = GDL90_UART;
-  }
-  if (settings->d1090 == D1090_USB || settings->d1090 == D1090_BLUETOOTH) {
-    settings->d1090 = D1090_UART;
+  if (cmd == EEPROM_EXT_LOAD) {
+    if (settings->mode != SOFTRF_MODE_NORMAL
+#if !defined(EXCLUDE_TEST_MODE)
+        &&
+        settings->mode != SOFTRF_MODE_TXRX_TEST
+#endif /* EXCLUDE_TEST_MODE */
+        ) {
+      settings->mode = SOFTRF_MODE_NORMAL;
+    }
+
+    if (settings->nmea_out != NMEA_OFF) {
+      settings->nmea_out = NMEA_UART;
+    }
+    if (settings->gdl90 != GDL90_OFF) {
+      settings->gdl90 = GDL90_UART;
+    }
+    if (settings->d1090 != D1090_OFF) {
+      settings->d1090 = D1090_UART;
+    }
   }
 }
 
@@ -357,7 +458,35 @@ static void PSoC4_SPI_begin()
 
 static void PSoC4_swSer_begin(unsigned long baud)
 {
-  swSer.begin(baud);
+#if defined(CubeCell_GPS)
+  Serial_GNSS_In.begin(baud);
+#else
+  Serial_GNSS_Out.begin(baud);
+
+#if !defined(EXCLUDE_GNSS_MTK) && (STD_OUT_BR == 38400)
+  Serial_GNSS_Out.write("$PMTK251,38400*27\r\n");
+  GNSS_FLUSH(); delay(250);
+#endif /* EXCLUDE_GNSS_MTK */
+
+#if !defined(EXCLUDE_GNSS_UBLOX)
+  unsigned int baudrate = STD_OUT_BR;
+
+  setBR[ 8] = (baudrate      ) & 0xFF;
+  setBR[ 9] = (baudrate >>  8) & 0xFF;
+  setBR[10] = (baudrate >> 16) & 0xFF;
+
+  uint8_t msglen = makeUBXCFG(0x06, 0x00, sizeof(setBR), setBR);
+  Serial_GNSS_Out.write(GNSSbuf, msglen);
+  GNSS_FLUSH(); delay(250);
+#endif /* EXCLUDE_GNSS_UBLOX */
+
+// https://github.com/HelTecAutomation/CubeCell-Arduino/commit/0c7dfbf325602a0ac502b89a4e7e44e9b705e5ac
+#if 0
+  Serial_GNSS_Out.end();
+#endif
+
+  Serial_GNSS_Out.begin(STD_OUT_BR);
+#endif /* CubeCell_GPS */
 }
 
 static void PSoC4_swSer_enableRx(boolean arg)
@@ -370,7 +499,14 @@ static byte PSoC4_Display_setup()
   byte rval = DISPLAY_NONE;
 
 #if defined(USE_OLED)
-  rval = OLED_setup();
+#if !defined(CubeCell_GPS)
+  /* generic module may not have built-in I2C pull-up resistors */
+  Wire.begin();
+  /* I2C transaction @ SSD1306_OLED_I2C_ADDR is a part of OLED_setup() */
+  Wire.beginTransmission(SSD1306_OLED_I2C_ADDR + 1);
+  if (Wire.endTransmission() != 0)
+#endif /* CubeCell_GPS */
+    rval = OLED_setup();
 #endif /* USE_OLED */
 
   return rval;
@@ -460,7 +596,12 @@ static float PSoC4_Battery_param(uint8_t param)
           digitalWrite(VBAT_ADC_CTL,LOW);
         }
 
+#if !defined(ARDUINO_ARCH_ASR650X)
+        /* Heltec CubeCell Arduino Core 1.2.0 or less */
         mV = analogRead(SOC_GPIO_PIN_BATTERY);
+#else
+        mV = analogReadmV(SOC_GPIO_PIN_BATTERY);
+#endif
 
         /* restore previous state of VBAT_ADC_CTL pin */
         if (user_key_state == HIGH) {
@@ -560,11 +701,14 @@ void onPageButtonEvent() {
 static void PSoC4_Button_setup()
 {
 #if SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN
-  if (hw_info.model == SOFTRF_MODEL_MINI) {
     int button_pin = SOC_GPIO_PIN_BUTTON;
 
-    // Button(s) uses external pull up resistor.
-    pinMode(button_pin, INPUT);
+    if (hw_info.model == SOFTRF_MODEL_MINI) {
+      // Button(s) uses external pull up resistor.
+      pinMode(button_pin, INPUT);
+    } else {
+      pinMode(button_pin, INPUT_PULLUP);
+    }
 
     button_1.init(button_pin);
 
@@ -585,26 +729,22 @@ static void PSoC4_Button_setup()
     PageButtonConfig->setLongPressDelay(2000);
 
 //  attachInterrupt(digitalPinToInterrupt(button_pin), onPageButtonEvent, CHANGE );
-  }
 #endif /* SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN */
 }
 
 static void PSoC4_Button_loop()
 {
 #if SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN
-  if (hw_info.model == SOFTRF_MODEL_MINI) {
     button_1.check();
-  }
 #endif /* SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN */
 }
 
 static void PSoC4_Button_fini()
 {
 #if SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN
-  if (hw_info.model == SOFTRF_MODEL_MINI) {
 //  detachInterrupt(digitalPinToInterrupt(SOC_GPIO_PIN_BUTTON));
+    while (digitalRead(SOC_GPIO_PIN_BUTTON) == LOW);
     pinMode(SOC_GPIO_PIN_BUTTON, ANALOG);
-  }
 #endif /* SOC_GPIO_PIN_BUTTON != SOC_UNUSED_PIN */
 }
 
@@ -695,7 +835,8 @@ const SoC_ops_t PSoC4_ops = {
   PSoC4_WDT_fini,
   PSoC4_Button_setup,
   PSoC4_Button_loop,
-  PSoC4_Button_fini
+  PSoC4_Button_fini,
+  NULL
 };
 
-#endif /* __ASR6501__ */
+#endif /* __ASR6501__ || ARDUINO_ARCH_ASR650X */

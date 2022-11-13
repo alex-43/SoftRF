@@ -1,6 +1,6 @@
 /*
  * Platform_ESP8266.h
- * Copyright (C) 2020-2021 Linar Yusupov
+ * Copyright (C) 2020-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,6 +29,10 @@
 #define MAX_TRACKING_OBJECTS            9
 
 #define SerialInput                     Serial
+
+#define Serial_GNSS_In                  Serial
+#define Serial_GNSS_Out                 Serial
+#define SOC_GPIO_PIN_GNSS_PPS           SOC_UNUSED_PIN
 
 #define SOC_A0_VOLTAGE_DIVIDER          (950.0 / 3.2)
 #define SOC_GPIO_PIN_BATTERY            A0

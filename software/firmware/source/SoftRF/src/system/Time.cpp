@@ -1,6 +1,6 @@
 /*
  * TimeHelper.cpp
- * Copyright (C) 2016-2021 Linar Yusupov
+ * Copyright (C) 2016-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,6 +17,7 @@
  */
 
 #include "SoC.h"
+#include "Time.h"
 
 #if defined(EXCLUDE_WIFI)
 void Time_setup()     {}
@@ -158,3 +159,32 @@ void Time_setup()
 }
 
 #endif /* EXCLUDE_WIFI */
+
+UpTime_t UpTime = {0, 0, 0, 0};
+static unsigned long UpTime_Marker = 0;
+
+void Time_loop()
+{
+  unsigned long ms_since_boot = millis();
+
+  if (ms_since_boot - UpTime_Marker > 1000) {
+
+    uint32_t sec   = ms_since_boot / 1000;
+    uint32_t min   = sec / 60;
+    uint32_t hr    = min / 60;
+
+    UpTime.days    = hr  / 24;
+    UpTime.hours   = hr  % 24;
+    UpTime.minutes = min % 60;
+    UpTime.seconds = sec % 60;
+
+#if defined(TAKE_CARE_OF_MILLIS_ROLLOVER)
+    /* restart the device when uptime is more than 46 days */
+    if (UpTime.days > 46) {
+      SoC->reset();
+    }
+#endif /* TAKE_CARE_OF_MILLIS_ROLLOVER */
+
+    UpTime_Marker = ms_since_boot;
+  }
+}

@@ -78,6 +78,18 @@ typedef struct {
   {                                                                            \
     .total_size = (1UL << 20), /* 1 MiB */                                     \
         .start_up_time_us = 10000, .manufacturer_id = 0x1f,                    \
+    .memory_type = 0x84, .capacity = 0x01, .max_clock_speed_mhz = 85,          \
+    .quad_enable_bit_mask = 0x00, .has_sector_protection = true,               \
+    .supports_fast_read = true, .supports_qspi = false,                        \
+    .supports_qspi_writes = false, .write_status_register_split = false,       \
+    .single_status_byte = false, .is_fram = false,                             \
+  }
+
+// Settings for the Adesto Tech AT25SF041 4MiB SPI flash used in AS7262 sensor
+#define AT25SF041                                                              \
+  {                                                                            \
+    .total_size = (4UL << 20), /* 4 MiB */                                     \
+        .start_up_time_us = 10000, .manufacturer_id = 0x1f,                    \
     .memory_type = 0x45, .capacity = 0x01, .max_clock_speed_mhz = 85,          \
     .quad_enable_bit_mask = 0x00, .has_sector_protection = true,               \
     .supports_fast_read = true, .supports_qspi = false,                        \
@@ -97,6 +109,21 @@ typedef struct {
         .quad_enable_bit_mask = 0x02, .has_sector_protection = false,          \
     .supports_fast_read = true, .supports_qspi = true,                         \
     .supports_qspi_writes = true, .write_status_register_split = false,        \
+    .single_status_byte = false, .is_fram = false,                             \
+  }
+
+// Settings for the Gigadevice GD25Q32C 4MiB SPI flash.
+// Datasheet: http://www.gigadevice.com/datasheet/gd25q32c/
+#define GD25Q32C                                                               \
+  {                                                                            \
+    .total_size = (1UL << 22), /* 4 MiB */                                     \
+        .start_up_time_us = 5000, .manufacturer_id = 0xc8,                     \
+    .memory_type = 0x40, .capacity = 0x16,                                     \
+    .max_clock_speed_mhz =                                                     \
+        104, /* if we need 120 then we can turn on high performance mode */    \
+        .quad_enable_bit_mask = 0x02, .has_sector_protection = false,          \
+    .supports_fast_read = true, .supports_qspi = true,                         \
+    .supports_qspi_writes = true, .write_status_register_split = true,         \
     .single_status_byte = false, .is_fram = false,                             \
   }
 
@@ -172,9 +199,25 @@ typedef struct {
 // Datasheet:
 #define MX25L1606                                                              \
   {                                                                            \
-    .total_size = (1 << 21), /* 2 MiB */                                       \
+    .total_size = (1UL << 21), /* 2 MiB */                                     \
         .start_up_time_us = 5000, .manufacturer_id = 0xc2,                     \
     .memory_type = 0x20, .capacity = 0x15, .max_clock_speed_mhz = 8,           \
+    .quad_enable_bit_mask = 0x40, .has_sector_protection = false,              \
+    .supports_fast_read = true, .supports_qspi = true,                         \
+    .supports_qspi_writes = true, .write_status_register_split = false,        \
+    .single_status_byte = true, .is_fram = false,                              \
+  }
+
+// Settings for the Macronix MX25R1635F 2MiB SPI flash.
+// Datasheet:
+// https://www.macronix.com/Lists/Datasheet/Attachments/7595/MX25R1635F,%20Wide%20Range,%2016Mb,%20v1.6.pdf
+// By default its in lower power mode which can only do 8mhz. In high power mode
+// it can do 80mhz.
+#define MX25R1635F                                                             \
+  {                                                                            \
+    .total_size = (1UL << 21), /* 2 MiB */                                     \
+        .start_up_time_us = 5000, .manufacturer_id = 0xc2,                     \
+    .memory_type = 0x28, .capacity = 0x15, .max_clock_speed_mhz = 8,           \
     .quad_enable_bit_mask = 0x40, .has_sector_protection = false,              \
     .supports_fast_read = true, .supports_qspi = true,                         \
     .supports_qspi_writes = true, .write_status_register_split = false,        \
@@ -189,6 +232,20 @@ typedef struct {
     .total_size = (1UL << 22), /* 4 MiB */                                     \
         .start_up_time_us = 5000, .manufacturer_id = 0xc2,                     \
     .memory_type = 0x20, .capacity = 0x16, .max_clock_speed_mhz = 133,         \
+    .quad_enable_bit_mask = 0x40, .has_sector_protection = false,              \
+    .supports_fast_read = true, .supports_qspi = true,                         \
+    .supports_qspi_writes = true, .write_status_register_split = false,        \
+    .single_status_byte = true, .is_fram = false,                              \
+  }
+
+// Settings for the Macronix MX25L6433F 8MiB SPI flash.
+// Datasheet:
+// https://www.macronix.com/Lists/Datasheet/Attachments/7408/MX25L6433F,%203V,%2064Mb,%20v1.6.pdf
+#define MX25L6433F                                                             \
+  {                                                                            \
+    .total_size = (1UL << 23), /* 8 MiB */                                     \
+        .start_up_time_us = 5000, .manufacturer_id = 0xc2,                     \
+    .memory_type = 0x20, .capacity = 0x17, .max_clock_speed_mhz = 133,         \
     .quad_enable_bit_mask = 0x40, .has_sector_protection = false,              \
     .supports_fast_read = true, .supports_qspi = true,                         \
     .supports_qspi_writes = true, .write_status_register_split = false,        \
@@ -252,11 +309,26 @@ typedef struct {
 
 // Settings for the Winbond W25Q80DL 1MiB SPI flash.
 // https://www.winbond.com/resource-files/w25q80dv%20dl_revh_10022015.pdf
+
 #define W25Q80DL                                                               \
   {                                                                            \
     .total_size = (1UL << 20), /* 1 MiB */                                     \
         .start_up_time_us = 5000, .manufacturer_id = 0xef,                     \
-    .memory_type = 0x60, .capacity = 0x14, .max_clock_speed_mhz = 104,         \
+    .memory_type = 0x40, .capacity = 0x14, .max_clock_speed_mhz = 80,          \
+    .quad_enable_bit_mask = 0x02, .has_sector_protection = false,              \
+    .supports_fast_read = true, .supports_qspi = true,                         \
+    .supports_qspi_writes = false, .write_status_register_split = false,       \
+    .single_status_byte = false, .is_fram = false,                             \
+  }
+
+// Settings for the Winbond W25Q80DV 1MiB SPI flash.
+// https://www.winbond.com/resource-files/w25q80dv%20dl_revh_10022015.pdf
+
+#define W25Q80DV                                                               \
+  {                                                                            \
+    .total_size = (1UL << 20), /* 1 MiB */                                     \
+        .start_up_time_us = 5000, .manufacturer_id = 0xef,                     \
+    .memory_type = 0x40, .capacity = 0x14, .max_clock_speed_mhz = 104,         \
     .quad_enable_bit_mask = 0x02, .has_sector_protection = false,              \
     .supports_fast_read = true, .supports_qspi = true,                         \
     .supports_qspi_writes = false, .write_status_register_split = false,       \
@@ -302,6 +374,7 @@ typedef struct {
     .quad_enable_bit_mask = 0x02, .has_sector_protection = false,              \
     .supports_fast_read = true, .supports_qspi = true,                         \
     .supports_qspi_writes = true, .write_status_register_split = false,        \
+    .single_status_byte = false, .is_fram = false,                             \
   }
 
 // Settings for the Winbond W25Q32BV 4MiB SPI flash.
@@ -341,6 +414,20 @@ typedef struct {
     .quad_enable_bit_mask = 0x02, .has_sector_protection = false,              \
     .supports_fast_read = true, .supports_qspi = true,                         \
     .supports_qspi_writes = true, .write_status_register_split = false,        \
+  }
+
+// Settings for the Winbond W25Q32JV-IQ 4MiB SPI flash. Note that JV-IM has a
+// different .memory_type (0x70) Datasheet:
+// https://www.winbond.com/resource-files/w25q32jv%20revh%2001072019%20plus.pdf
+#define W25Q32JV_IQ                                                            \
+  {                                                                            \
+    .total_size = (1UL << 22), /* 4 MiB */                                     \
+        .start_up_time_us = 5000, .manufacturer_id = 0xef,                     \
+    .memory_type = 0x40, .capacity = 0x16, .max_clock_speed_mhz = 133,         \
+    .quad_enable_bit_mask = 0x02, .has_sector_protection = false,              \
+    .supports_fast_read = true, .supports_qspi = true,                         \
+    .supports_qspi_writes = true, .write_status_register_split = false,        \
+    .single_status_byte = false, .is_fram = false,                             \
   }
 
 // Settings for the Winbond W25Q64JV-IM 8MiB SPI flash. Note that JV-IQ has a
@@ -406,6 +493,19 @@ typedef struct {
     .total_size = (1UL << 25), /* 32 MiB */                                    \
         .start_up_time_us = 5000, .manufacturer_id = 0xef,                     \
     .memory_type = 0x40, .capacity = 0x19, .max_clock_speed_mhz = 133,         \
+    .quad_enable_bit_mask = 0x02, .has_sector_protection = false,              \
+    .supports_fast_read = true, .supports_qspi = true,                         \
+    .supports_qspi_writes = true, .write_status_register_split = false,        \
+    .single_status_byte = false, .is_fram = false,                             \
+  }
+
+// Settings for the Zetta Device ZD25WQ16B 2MiB SPI flash.
+// Datasheet: http://www.zettadevice.com/upload/file/pdf/ZD25WQ16B_datasheet.pdf
+#define ZD25WQ16B                                                              \
+  {                                                                            \
+    .total_size = (1 << 21), /* 2 MiB */                                       \
+        .start_up_time_us = 12000, .manufacturer_id = 0xba,                    \
+    .memory_type = 0x60, .capacity = 0x15, .max_clock_speed_mhz = 85,          \
     .quad_enable_bit_mask = 0x02, .has_sector_protection = false,              \
     .supports_fast_read = true, .supports_qspi = true,                         \
     .supports_qspi_writes = true, .write_status_register_split = false,        \

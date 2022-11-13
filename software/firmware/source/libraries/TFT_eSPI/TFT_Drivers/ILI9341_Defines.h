@@ -1,8 +1,13 @@
 // Change the width and height if required (defined in portrait mode)
 // or use the constructor to over-ride defaults
-#define TFT_WIDTH  240
-#define TFT_HEIGHT 320
 
+#if defined (ILI9341_DRIVER) || defined (ILI9341_2_DRIVER)
+  #define TFT_WIDTH  240
+  #define TFT_HEIGHT 320
+#elif defined (ILI9342_DRIVER)
+  #define TFT_WIDTH  320
+  #define TFT_HEIGHT 240
+#endif
 
 // Color definitions for backwards compatibility with old sketches
 // use colour definitions like TFT_BLACK to make sketches more portable
@@ -50,6 +55,16 @@
 #define TFT_MAD_BGR 0x08
 #define TFT_MAD_MH  0x04
 #define TFT_MAD_RGB 0x00
+
+#ifdef TFT_RGB_ORDER
+  #if (TFT_RGB_ORDER == 1)
+    #define TFT_MAD_COLOR_ORDER TFT_MAD_RGB
+  #else
+    #define TFT_MAD_COLOR_ORDER TFT_MAD_BGR
+  #endif
+#else
+  #define TFT_MAD_COLOR_ORDER TFT_MAD_BGR
+#endif
 
 #define TFT_INVOFF  0x20
 #define TFT_INVON   0x21

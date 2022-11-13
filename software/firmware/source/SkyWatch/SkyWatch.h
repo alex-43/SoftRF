@@ -1,6 +1,6 @@
 /*
  * SkyWatch.h
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,7 +23,7 @@
 #include <Arduino.h>
 #endif /* ARDUINO */
 
-#define SKYWATCH_FIRMWARE_VERSION  "1.0-rc7"
+#define SKYWATCH_FIRMWARE_VERSION  "1.1"
 #define SKYWATCH_IDENT    "SkyWatch"
 #define SOFTRF_IDENT      "SoftRF"
 
@@ -120,10 +120,25 @@ typedef struct hardware_info {
     byte  baro;
     byte  display;
     byte  storage;
+    byte  rtc;
+    byte  imu;
+    byte  pmu;
+    byte  slave;
 } hardware_info_t;
+
+typedef struct IODev_ops_struct {
+  const char name[16];
+  void (*setup)();
+  void (*loop)();
+  void (*fini)();
+  int (*available)(void);
+  int (*read)(void);
+  size_t (*write)(const uint8_t *buffer, size_t size);
+} IODev_ops_t;
 
 enum
 {
+	SOFTRF_MODEL_UNKNOWN,
 	SOFTRF_MODEL_STANDALONE,
 	SOFTRF_MODEL_PRIME,
 	SOFTRF_MODEL_UAV,
@@ -134,9 +149,18 @@ enum
 	SOFTRF_MODEL_RETRO,
 	SOFTRF_MODEL_SKYWATCH,
 	SOFTRF_MODEL_DONGLE,
-	SOFTRF_MODEL_MULTI,
+	SOFTRF_MODEL_OCTAVE,
 	SOFTRF_MODEL_UNI,
-	SOFTRF_MODEL_WEBTOP
+	SOFTRF_MODEL_WEBTOP_SERIAL,
+	SOFTRF_MODEL_MINI,
+	SOFTRF_MODEL_BADGE,
+	SOFTRF_MODEL_ES,
+	SOFTRF_MODEL_BRACELET,
+	SOFTRF_MODEL_ACADEMY,
+	SOFTRF_MODEL_LEGO,
+	SOFTRF_MODEL_WEBTOP_USB,
+	SOFTRF_MODEL_PRIME_MK3,
+	SOFTRF_MODEL_BALKAN,
 };
 
 enum
@@ -145,19 +169,8 @@ enum
 	HW_REV_T_WATCH_19,
 	HW_REV_T_WATCH_20,
 	HW_REV_DEVKIT,
-	HW_REV_T8
-};
-
-enum
-{
-	GNSS_MODULE_NONE,
-	GNSS_MODULE_NMEA, /* generic NMEA */
-	GNSS_MODULE_U6,   /* Ublox 6 */
-	GNSS_MODULE_U7,   /* Ublox 7 */
-	GNSS_MODULE_U8,   /* Ublox 8 */
-	GNSS_MODULE_U9,   /* reserved for Ublox 9 */
-	GNSS_MODULE_MAV,  /* MAVLink */
-	GNSS_MODULE_S7XG  /* S7XG */
+	HW_REV_T8,
+	HW_REV_TDONGLE,
 };
 
 enum
@@ -165,7 +178,8 @@ enum
 	DISPLAY_NONE,
 	DISPLAY_EPD_2_7,
 	DISPLAY_OLED_2_4,
-	DISPLAY_TFT_TTGO
+	DISPLAY_TFT_TTGO_240,
+	DISPLAY_TFT_TTGO_135,
 };
 
 enum
@@ -176,7 +190,7 @@ enum
 	ADAPTER_WAVESHARE_ESP32,
 	ADAPTER_TTGO_T5S,
 	ADAPTER_NODEMCU,
-	ADAPTER_OLED
+	ADAPTER_OLED,
 };
 
 enum
@@ -184,9 +198,10 @@ enum
 	CON_NONE,
 	CON_SERIAL_MAIN,
 	CON_SERIAL_AUX,
+	CON_USB,
 	CON_WIFI_UDP,
 	CON_WIFI_TCP,
-	CON_BLUETOOTH
+	CON_BLUETOOTH,
 };
 
 enum
@@ -197,7 +212,7 @@ enum
 	B38400,
 	B57600,
 	B115200,
-	B2000000
+	B2000000,
 };
 
 enum
@@ -208,14 +223,14 @@ enum
 	PROTOCOL_MAVLINK_1,
 	PROTOCOL_MAVLINK_2,
 	PROTOCOL_D1090,
-	PROTOCOL_UATRADIO
+	PROTOCOL_UATRADIO,
 };
 
 enum
 {
 	UNITS_METRIC,
 	UNITS_IMPERIAL,
-	UNITS_MIXED     // almost the same as metric, but all the altitudes are in feet
+	UNITS_MIXED,    // almost the same as metric, but all the altitudes are in feet
 };
 
 enum
@@ -223,7 +238,7 @@ enum
 	VIEW_MODE_STATUS,
 	VIEW_MODE_RADAR,
 	VIEW_MODE_TEXT,
-	VIEW_MODE_TIME
+	VIEW_MODE_TIME,
 };
 
 /*
@@ -246,14 +261,15 @@ enum
 	ZOOM_LOWEST,
 	ZOOM_LOW,
 	ZOOM_MEDIUM,
-	ZOOM_HIGH
+	ZOOM_HIGH,
 };
 
 enum
 {
 	ID_REG,
 	ID_TAIL,
-	ID_MAM
+	ID_MAM,
+	ID_TYPE,
 };
 
 enum
@@ -261,7 +277,7 @@ enum
 	VOICE_OFF,
 	VOICE_1,
 	VOICE_2,
-	VOICE_3
+	VOICE_3,
 };
 
 enum
@@ -270,21 +286,55 @@ enum
 	ANTI_GHOSTING_AUTO,
 	ANTI_GHOSTING_2MIN,
 	ANTI_GHOSTING_5MIN,
-	ANTI_GHOSTING_10MIN
+	ANTI_GHOSTING_10MIN,
 };
 
 enum
 {
 	STORAGE_NONE,
-	STORAGE_uSD
+	STORAGE_FLASH,
+	STORAGE_CARD,
+	STORAGE_FLASH_AND_CARD,
 };
 
 enum
 {
+	RTC_NONE,
+	RTC_PCF8563,
+};
+
+enum
+{
+	IMU_NONE,
+	IMU_BNO080,
+	ACC_BMA423,
+	ACC_ADXL362,
+	IMU_ICM20948,
+	IMU_MPU9250,
+};
+
+enum
+{
+	TRAFFIC_FILTER_OFF,
+	TRAFFIC_FILTER_500M,
+	TRAFFIC_FILTER_1500M,
+};
+
+enum
+{
+	DB_NONE,
 	DB_AUTO,
 	DB_FLN,
 	DB_OGN,
-	DB_ICAO
+	DB_ICAO,
+};
+
+enum
+{
+	ROTATE_0,
+	ROTATE_90,
+	ROTATE_180,
+	ROTATE_270,
 };
 
 /* SoftRF enumerations */
@@ -298,7 +348,8 @@ enum
 	SOFTRF_MODE_TXRX_TEST,
 	SOFTRF_MODE_LOOPBACK,
 	SOFTRF_MODE_UAV,
-	SOFTRF_MODE_RECEIVER
+	SOFTRF_MODE_RECEIVER,
+	SOFTRF_MODE_CASUAL,
 };
 
 enum
@@ -306,16 +357,18 @@ enum
 	RF_IC_NONE,
 	RF_IC_NRF905,
 	RF_IC_SX1276,
+	RF_IC_UATM,
 	RF_IC_CC13XX,
-	RF_IC_S7XG,
-	RF_DRV_OGN
+	RF_DRV_OGN,
+	RF_IC_SX1262,
+	RF_IC_MAX2837,
 };
 
 enum
 {
 	RF_TX_POWER_FULL,
 	RF_TX_POWER_LOW,
-	RF_TX_POWER_OFF
+	RF_TX_POWER_OFF,
 };
 
 enum
@@ -323,21 +376,21 @@ enum
 	TRAFFIC_ALARM_NONE,
 	TRAFFIC_ALARM_DISTANCE,
 	TRAFFIC_ALARM_VECTOR,
-	TRAFFIC_ALARM_LEGACY
+	TRAFFIC_ALARM_LEGACY,
 };
 
 enum
 {
 	BUZZER_VOLUME_FULL,
 	BUZZER_VOLUME_LOW,
-	BUZZER_OFF
+	BUZZER_OFF,
 };
 
 enum
 {
 	DIRECTION_TRACK_UP,
 	DIRECTION_NORTH_UP,
-	LED_OFF
+	LED_OFF,
 };
 
 enum
@@ -346,7 +399,8 @@ enum
 	NMEA_UART,
 	NMEA_UDP,
 	NMEA_TCP,
-	NMEA_BLUETOOTH
+	NMEA_USB,
+	NMEA_BLUETOOTH,
 };
 
 enum
@@ -355,7 +409,8 @@ enum
 	GDL90_UART,
 	GDL90_UDP,
 	GDL90_TCP,
-	GDL90_BLUETOOTH
+	GDL90_USB,
+	GDL90_BLUETOOTH,
 };
 
 enum
@@ -364,13 +419,14 @@ enum
 	D1090_UART,
 	D1090_UDP,
 	D1090_TCP,
-	D1090_BLUETOOTH
+	D1090_USB,
+	D1090_BLUETOOTH,
 };
 
 enum
 {
 	JSON_OFF,
-	JSON_PING
+	JSON_PING,
 };
 
 /* end of SoftRF enumerations */

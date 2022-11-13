@@ -1,6 +1,6 @@
 /*
  * TFTHelper.h
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -59,6 +59,8 @@ void TFT_fini(const char *);
 void TFT_Up();
 void TFT_Down();
 void TFT_Message(const char *, const char *);
+void TFT_Mode_Cycle();
+void TFT_info1();
 
 void TFT_status_setup();
 void TFT_status_loop();

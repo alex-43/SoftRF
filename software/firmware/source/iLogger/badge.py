@@ -4,7 +4,7 @@
 #  Flight Recorder for SoftRF Badge Edition
 #
 #  File name: badge.py
-#  Copyright (C) 2021 Linar Yusupov
+#  Copyright (C) 2021-2022 Linar Yusupov
 # 
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -49,12 +49,15 @@ from aerofiles.igc.writer import Writer
 import board
 
 SOC_GPIO_PIN_IO_PWR   = board.P0_12
-#SOC_GPIO_PIN_3V3_PWR  = board.P0_13
+SOC_GPIO_PIN_3V3_PWR  = board.P0_13
 # Modded REV_1 3V3 power
-SOC_GPIO_PIN_3V3_PWR  = board.P1_01
+#SOC_GPIO_PIN_3V3_PWR  = board.P1_01
 
-SOC_GPIO_LED_GREEN    = board.P0_15
-SOC_GPIO_LED_RED      = board.P0_13
+#SOC_GPIO_LED_GREEN    = board.P0_15
+#SOC_GPIO_LED_RED      = board.P0_13
+
+SOC_GPIO_LED_GREEN    = board.P1_01
+SOC_GPIO_LED_RED      = board.P1_03
 SOC_GPIO_LED_BLUE     = board.P0_14
 
 SOC_GPIO_PIN_SS       = board.P0_24
@@ -118,7 +121,7 @@ BME_present    = True if BME280_ADDRESS in i2c_devs else False
 
 button          = DigitalInOut(SOC_GPIO_PIN_BUTTON)
 button.direction = Direction.INPUT
-button.pull    = Pull.UP
+#button.pull    = Pull.UP
 
 BLE_active     = False
 Power_Button   = not button.value
@@ -186,11 +189,19 @@ if GNSS_present:
     from adafruit_gps import GPS
     uart_gps = UART(SOC_GPIO_PIN_SWSER_TX, SOC_GPIO_PIN_SWSER_RX, baudrate=9600, timeout=30)
     gps      = GPS(uart_gps, debug=False)
-    # RMC + GGA
-    gps.send_command(b"PGKC242,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0")
+    # NMEA ver. <= 4.0
+    gps.send_command(b"PCAS05,5")
     sleep(0.2)
-    gps.send_command(b"PGKC115,1,1,0,0")   # GPS + GLONASS
+    # RMC + GGA
+    # gps.send_command(b"PGKC242,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0")
+    gps.send_command(b"PCAS03,1,0,0,0,1,0,0,0,0,0,,,0,0")
+    # GGA,RMC and GSA
+    # gps.send_command(b"PCAS03,1,0,1,0,1,0,0,0,0,0,,,0,0")
+    sleep(0.2)
+    # gps.send_command(b"PGKC115,1,1,0,0")   # GPS + GLONASS
     # gps.send_command(b"PGKC115,1,0,1,0")   # GPS + BEIDOU
+    gps.send_command(b"PCAS04,5")            # GPS + GLONASS
+    # gps.send_command(b"PCAS04,7")          # GPS + BDS + GLONASS
 
 import adafruit_bme280
 if BME_present:
@@ -445,16 +456,8 @@ v33_pwr = DigitalInOut(SOC_GPIO_PIN_3V3_PWR)
 v33_pwr.direction = Direction.OUTPUT
 v33_pwr.value = False
 
-from microcontroller import delay_us, reset
+button.deinit()
+import alarm
+pin_alarm = alarm.pin.PinAlarm(pin=SOC_GPIO_PIN_BUTTON, value=False, pull=False)
+alarm.exit_and_deep_sleep_until_alarms(pin_alarm)
 
-while button.value:
-    #sleep(0.1)
-    delay_us(100000)
-
-v33_pwr.value = True
-io_pwr.value  = True
-
-while not button.value:
-    sleep(0.1)
-
-reset()

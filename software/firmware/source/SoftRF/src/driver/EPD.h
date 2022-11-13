@@ -1,6 +1,6 @@
 /*
  * EPDHelper.h
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +19,10 @@
 #ifndef EPDHELPER_H
 #define EPDHELPER_H
 
-#define ENABLE_GxEPD2_GFX       0
+#if defined(USE_EPAPER)
+#define ENABLE_GxEPD2_GFX       1
+#include <GxEPD2_BW.h>
+#endif /* USE_EPAPER */
 
 #define EPD_EXPIRATION_TIME     5 /* seconds */
 
@@ -47,28 +50,39 @@
 #define EPD_HIBERNATE           display->hibernate()
 //#define EPD_HIBERNATE         display->powerOff()
 
+//#define	EPD_POWEROFF		      {}
 #define EPD_POWEROFF            display->powerOff()
 
 enum
 {
-	VIEW_MODE_STATUS,
+	EPD_UPDATE_NONE = 0,
+	EPD_UPDATE_SLOW,
+	EPD_UPDATE_FAST
+};
+
+enum
+{
+	VIEW_MODE_STATUS = 0,
 	VIEW_MODE_RADAR,
 	VIEW_MODE_TEXT,
 	VIEW_MODE_BARO,
-	VIEW_MODE_TIME
+	VIEW_MODE_TIME,
+	VIEW_MODE_IMU,
+
+	VIEW_MODES_COUNT,
 };
 
 /*
  * 'Radar view' scale factor (outer circle diameter)
  *
  * Metric and Mixed:
- *  LOWEST - 20 KM diameter (10 KM radius)
+ *  LOWEST - 60 KM diameter (30 KM radius)
  *  LOW    - 10 KM diameter ( 5 KM radius)
  *  MEDIUM -  4 KM diameter ( 2 KM radius)
  *  HIGH   -  2 KM diameter ( 1 KM radius)
  *
  * Imperial:
- *  LOWEST - 10 NM diameter (  5 NM radius)
+ *  LOWEST - 30 NM diameter ( 15 NM radius)
  *  LOW    -  5 NM diameter (2.5 NM radius)
  *  MEDIUM -  2 NM diameter (  1 NM radius)
  *  HIGH   -  1 NM diameter (0.5 NM radius)
@@ -140,6 +154,14 @@ enum
 	DB_ICAO
 };
 
+enum
+{
+	ROTATE_0,
+	ROTATE_90,
+	ROTATE_180,
+	ROTATE_270
+};
+
 typedef struct UI_Settings {
     uint8_t  adapter;
 
@@ -152,13 +174,13 @@ typedef struct UI_Settings {
     char     server  [18];
     char     key     [18];
 
-    uint8_t  resvd1:2;
+    uint8_t  rotate:2;
     uint8_t  orientation:1;
     uint8_t  adb:3;
     uint8_t  idpref:2;
 
-    uint8_t  vmode:2;
-    uint8_t  voice:3;
+    uint8_t  vmode:3;
+    uint8_t  voice:2;
     uint8_t  aghost:3;
 
     uint8_t  filter:4;
@@ -166,7 +188,7 @@ typedef struct UI_Settings {
 
     uint32_t team;
 
-    uint8_t  resvd2;
+    uint8_t  resvd12;
     uint8_t  resvd3;
     uint8_t  resvd4;
     uint8_t  resvd5;
@@ -184,24 +206,20 @@ typedef struct navbox_struct
   uint16_t  width;
   uint16_t  height;
   int32_t   value;
-  int32_t   prev_value;
+//  int32_t   prev_value;
   uint32_t  timestamp;
 } navbox_t;
 
-void EPD_Clear_Screen();
 bool EPD_setup(bool);
 void EPD_loop();
-void EPD_fini(int);
-void EPD_info1(bool, bool);
+void EPD_fini(int, bool);
+void EPD_info1();
+void EPD_info2(int, char *, char *, char *);
 
 void EPD_Mode();
 void EPD_Up();
 void EPD_Down();
 void EPD_Message(const char *, const char *);
-
-#if defined(USE_EPAPER)
-EPD_Task_t EPD_Task(void *);
-#endif /* USE_EPAPER */
 
 void EPD_status_setup();
 void EPD_status_loop();
@@ -223,14 +241,25 @@ void EPD_baro_loop();
 void EPD_baro_next();
 void EPD_baro_prev();
 
+void EPD_imu_setup();
+void EPD_imu_loop();
+void EPD_imu_next();
+void EPD_imu_prev();
+
 void EPD_time_setup();
 void EPD_time_loop();
 void EPD_time_next();
 void EPD_time_prev();
 
+#if defined(USE_EPAPER)
+EPD_Task_t EPD_Task(void *);
+extern GxEPD2_GFX *display;
+#endif /* USE_EPAPER */
+
 extern unsigned long EPDTimeMarker;
 extern bool EPD_vmode_updated;
-extern volatile bool EPD_ready_to_display;
+extern uint16_t EPD_pages_mask;
+extern volatile uint8_t EPD_update_in_progress;
 extern ui_settings_t ui_settings;
 extern ui_settings_t *ui;
 

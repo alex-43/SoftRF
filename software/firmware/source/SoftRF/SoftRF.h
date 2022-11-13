@@ -1,6 +1,6 @@
 /*
  * SoftRF.h
- * Copyright (C) 2016-2021 Linar Yusupov
+ * Copyright (C) 2016-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,20 +19,21 @@
 #ifndef SOFTRF_H
 #define SOFTRF_H
 
-#if defined(ARDUINO)
+#if defined(ARDUINO) || defined(HACKRF_ONE)
 #include <Arduino.h>
 #endif /* ARDUINO */
 
-#if defined(ENERGIA_ARCH_CC13XX) || defined(ENERGIA_ARCH_CC13X2)
+#if defined(ENERGIA_ARCH_CC13XX) || defined(ENERGIA_ARCH_CC13X2) || defined(HACKRF_ONE) || defined(ARDUINO_ARCH_AVR)
 #include <TimeLib.h>
-#endif /* ENERGIA_ARCH_CC13XX || ENERGIA_ARCH_CC13X2 */
+#endif /* ENERGIA_ARCH_CC13XX || ENERGIA_ARCH_CC13X2 || defined(HACKRF_ONE) */
 
 #if defined(RASPBERRY_PI)
 #include <raspi/raspi.h>
 #endif /* RASPBERRY_PI */
 
-#define SOFTRF_FIRMWARE_VERSION "1.0-rc9"
-#define SOFTRF_IDENT            "SoftRF-"
+#define SOFTRF_IDENT            "SoftRF"
+#define SOFTRF_FIRMWARE_VERSION "1.2"
+#define SOFTRF_USB_FW_VERSION   0x0102
 
 #define ENTRY_EXPIRATION_TIME   10 /* seconds */
 #define LED_EXPIRATION_TIME     5 /* seconds */
@@ -155,9 +156,11 @@ typedef struct hardware_info {
     byte  gnss;
     byte  baro;
     byte  display;
-#if defined(ENABLE_AHRS)
-    byte  ahrs;
-#endif /* ENABLE_AHRS */
+    byte  storage;
+    byte  rtc;
+    byte  imu;
+    byte  mag;
+    byte  pmu;
 } hardware_info_t;
 
 typedef struct IODev_ops_struct {
@@ -170,6 +173,12 @@ typedef struct IODev_ops_struct {
   size_t (*write)(const uint8_t *buffer, size_t size);
 } IODev_ops_t;
 
+typedef struct DB_ops_struct {
+  bool (*setup)();
+  bool (*fini)();
+  bool (*query)(uint8_t, uint32_t, char *, size_t);
+} DB_ops_t;
+
 enum
 {
 	SOFTRF_MODE_NORMAL,
@@ -179,11 +188,13 @@ enum
 	SOFTRF_MODE_TXRX_TEST,
 	SOFTRF_MODE_LOOPBACK,
 	SOFTRF_MODE_UAV,
-	SOFTRF_MODE_RECEIVER
+	SOFTRF_MODE_RECEIVER,
+	SOFTRF_MODE_CASUAL,
 };
 
 enum
 {
+	SOFTRF_MODEL_UNKNOWN,
 	SOFTRF_MODEL_STANDALONE,
 	SOFTRF_MODEL_PRIME,
 	SOFTRF_MODEL_UAV,
@@ -194,11 +205,18 @@ enum
 	SOFTRF_MODEL_RETRO,
 	SOFTRF_MODEL_SKYWATCH,
 	SOFTRF_MODEL_DONGLE,
-	SOFTRF_MODEL_MULTI,
+	SOFTRF_MODEL_OCTAVE,
 	SOFTRF_MODEL_UNI,
+	SOFTRF_MODEL_WEBTOP_SERIAL,
 	SOFTRF_MODEL_MINI,
 	SOFTRF_MODEL_BADGE,
-	SOFTRF_MODEL_ES
+	SOFTRF_MODEL_ES,
+	SOFTRF_MODEL_BRACELET,
+	SOFTRF_MODEL_ACADEMY,
+	SOFTRF_MODEL_LEGO,
+	SOFTRF_MODEL_WEBTOP_USB,
+	SOFTRF_MODEL_PRIME_MK3,
+	SOFTRF_MODEL_BALKAN,
 };
 
 enum
@@ -211,18 +229,37 @@ enum
 	SOFTRF_SHUTDOWN_NMEA,
 	SOFTRF_SHUTDOWN_BUTTON,
 	SOFTRF_SHUTDOWN_LOWBAT,
-	SOFTRF_SHUTDOWN_SENSOR
+	SOFTRF_SHUTDOWN_SENSOR,
 };
 
-static inline uint32_t DevID_Mapper(uint32_t id)
+enum
 {
-  /* remap address to avoid overlapping with congested FLARM range */
-  if (((id & 0x00FFFFFF) >= 0xDD0000) && ((id & 0x00FFFFFF) <= 0xDFFFFF)) {
-    id += 0x100000;
-  }
+	STORAGE_NONE,
+	STORAGE_FLASH,
+	STORAGE_CARD,
+	STORAGE_FLASH_AND_CARD,
+};
 
-  return id;
-}
+enum
+{
+	IMU_NONE,
+	ACC_BMA423,
+	ACC_ADXL362,
+	IMU_MPU6886,
+	IMU_MPU9250,
+	IMU_BNO080,
+	IMU_ICM20948,
+	IMU_QMI8658,
+};
+
+enum
+{
+	MAG_NONE,
+	MAG_AK8963,
+	MAG_AK09916,
+	MAG_IIS2MDC,
+	MAG_QMC6310,
+};
 
 extern ufo_t ThisAircraft;
 extern hardware_info_t hw_info;

@@ -1,6 +1,6 @@
 /*
  * Platform_ESP8266.cpp
- * Copyright (C) 2018-2021 Linar Yusupov
+ * Copyright (C) 2018-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -47,7 +47,7 @@ lmic_pinmap lmic_pins = {
 };
 
 #if defined(USE_EXP_SW_SERIAL)
-Exp_SoftwareSerial swSer(SOC_GPIO_PIN_SWSER_RX, SOC_GPIO_PIN_SWSER_TX, false, 256);
+Exp_SoftwareSerial swSer(SOC_GPIO_PIN_GNSS_RX, SOC_GPIO_PIN_GNSS_TX, false, 256);
 #else
 SoftwareSerial swSer;
 #endif
@@ -73,7 +73,7 @@ void ICACHE_FLASH_ATTR user_init()
 
 static void ESP8266_setup()
 {
-
+  Serial.begin(SERIAL_OUT_BR, SERIAL_OUT_BITS);
 }
 
 static void ESP8266_post_init()
@@ -135,7 +135,7 @@ static long ESP8266_random(long howsmall, long howBig)
 static void ESP8266_Sound_test(int var)
 {
   if (SOC_GPIO_PIN_BUZZER != SOC_UNUSED_PIN && settings->volume != BUZZER_OFF) {
-//    swSer.enableRx(false);
+//    Serial_GNSS_In.enableRx(false);
 
     if (var == REASON_DEFAULT_RST ||
         var == REASON_EXT_SYS_RST ||
@@ -157,7 +157,7 @@ static void ESP8266_Sound_test(int var)
     }
     delay(600);
 
-//    swSer.enableRx(true);
+//    Serial_GNSS_In.enableRx(true);
   }
 }
 
@@ -216,13 +216,13 @@ static void ESP8266_WiFi_transmit_UDP(int port, byte *buf, size_t size)
   case WIFI_STA:
     ClientIP = ESP8266_WiFi_get_broadcast();
 
-    swSer.enableRx(false);
+    Serial_GNSS_In.enableRx(false);
 
     Uni_Udp.beginPacket(ClientIP, port);
     Uni_Udp.write(buf, size);
     Uni_Udp.endPacket();
 
-    swSer.enableRx(true);
+    Serial_GNSS_In.enableRx(true);
 
     break;
   case WIFI_AP:
@@ -231,13 +231,13 @@ static void ESP8266_WiFi_transmit_UDP(int port, byte *buf, size_t size)
     while (stat_info != NULL) {
       ClientIP = stat_info->ip.addr;
 
-      swSer.enableRx(false);
+      Serial_GNSS_In.enableRx(false);
 
       Uni_Udp.beginPacket(ClientIP, port);
       Uni_Udp.write(buf, size);
       Uni_Udp.endPacket();
 
-      swSer.enableRx(true);
+      Serial_GNSS_In.enableRx(true);
 
       stat_info = STAILQ_NEXT(stat_info, next);
     }
@@ -290,7 +290,7 @@ static bool ESP8266_EEPROM_begin(size_t size)
   return true;
 }
 
-static void ESP8266_EEPROM_extension()
+static void ESP8266_EEPROM_extension(int cmd)
 {
 
 }
@@ -303,15 +303,15 @@ static void ESP8266_SPI_begin()
 static void ESP8266_swSer_begin(unsigned long baud)
 {
 #if defined(USE_EXP_SW_SERIAL)
-  swSer.begin(baud);
+  Serial_GNSS_In.begin(baud);
 #else
-  swSer.begin(baud, SWSERIAL_8N1, SOC_GPIO_PIN_SWSER_RX, SOC_GPIO_PIN_SWSER_TX, false, 256);
+  Serial_GNSS_In.begin(baud, SWSERIAL_8N1, SOC_GPIO_PIN_GNSS_RX, SOC_GPIO_PIN_GNSS_TX, false, 256);
 #endif
 }
 
 static void ESP8266_swSer_enableRx(boolean arg)
 {
-  swSer.enableRx(arg);
+  Serial_GNSS_In.enableRx(arg);
 }
 
 static byte ESP8266_Display_setup()
@@ -469,7 +469,8 @@ const SoC_ops_t ESP8266_ops = {
   ESP8266_WDT_fini,
   ESP8266_Button_setup,
   ESP8266_Button_loop,
-  ESP8266_Button_fini
+  ESP8266_Button_fini,
+  NULL
 };
 
 #endif /* ESP8266 */

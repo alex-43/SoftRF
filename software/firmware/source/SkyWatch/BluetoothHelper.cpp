@@ -1,6 +1,6 @@
 /*
  * BluetoothHelper.cpp
- * Copyright (C) 2018-2021 Linar Yusupov
+ * Copyright (C) 2018-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,7 +15,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 #if defined(ESP32)
+#include "sdkconfig.h"
+#endif
+
+#if defined(ESP32) && !defined(CONFIG_IDF_TARGET_ESP32S2) && !defined(CONFIG_IDF_TARGET_ESP32S3)
 
 #include "Platform_ESP32.h"
 #include "SoCHelper.h"
@@ -201,6 +206,11 @@ static void ESP32_Bluetooth_loop()
   }
 }
 
+static void ESP32_Bluetooth_fini()
+{
+  /* TBD */
+}
+
 static int ESP32_Bluetooth_available()
 {
   int rval = 0;
@@ -265,10 +275,11 @@ static size_t ESP32_Bluetooth_write(const uint8_t *buffer, size_t size)
   return rval;
 }
 
-Bluetooth_ops_t ESP32_Bluetooth_ops = {
+IODev_ops_t ESP32_Bluetooth_ops = {
   "ESP32 Bluetooth",
   ESP32_Bluetooth_setup,
   ESP32_Bluetooth_loop,
+  ESP32_Bluetooth_fini,
   ESP32_Bluetooth_available,
   ESP32_Bluetooth_read,
   ESP32_Bluetooth_write

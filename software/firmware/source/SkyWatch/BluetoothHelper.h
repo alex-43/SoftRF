@@ -1,6 +1,6 @@
 /*
  * BluetoothHelper.h
- * Copyright (C) 2018-2021 Linar Yusupov
+ * Copyright (C) 2018-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,17 +19,6 @@
 #ifndef BLUETOOTHHELPER_H
 #define BLUETOOTHHELPER_H
 
-#include <stddef.h>
-
-typedef struct Bluetooth_ops_struct {
-  const char name[16];
-  void (*setup)();
-  void (*loop)();
-  int (*available)(void);
-  int (*read)(void);
-  size_t (*write)(const uint8_t *buffer, size_t size);
-} Bluetooth_ops_t;
-
 enum
 {
 	BLUETOOTH_OFF,
@@ -39,6 +28,10 @@ enum
 };
 
 #if defined(ESP32)
+#include "sdkconfig.h"
+#endif
+
+#if defined(ESP32) && !defined(CONFIG_IDF_TARGET_ESP32S2) && !defined(CONFIG_IDF_TARGET_ESP32S3)
 
 #define SERVICE_UUID        "0000ffe0-0000-1000-8000-00805f9b34fb"
 #define CHARACTERISTIC_UUID "0000ffe1-0000-1000-8000-00805f9b34fb"
@@ -49,7 +42,7 @@ enum
 
 #define BLE_MAX_WRITE_CHUNK_SIZE  20
 
-extern Bluetooth_ops_t ESP32_Bluetooth_ops;
+extern IODev_ops_t ESP32_Bluetooth_ops;
 
 #if defined(ENABLE_BT_VOICE)
 

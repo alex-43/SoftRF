@@ -1,6 +1,6 @@
 /*
  * RFHelper.cpp
- * Copyright (C) 2016-2021 Linar Yusupov
+ * Copyright (C) 2016-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -47,17 +47,30 @@ FreqPlan RF_FreqPlan;
 static bool RF_ready = false;
 
 static size_t RF_tx_size = 0;
-static long TxRandomValue = 0;
 
 const rfchip_ops_t *rf_chip = NULL;
 bool RF_SX12XX_RST_is_connected = true;
 
+const char *Protocol_ID[] = {
+  [RF_PROTOCOL_LEGACY]    = "LEG",
+  [RF_PROTOCOL_OGNTP]     = "OGN",
+  [RF_PROTOCOL_P3I]       = "P3I",
+  [RF_PROTOCOL_ADSB_1090] = "ADS",
+  [RF_PROTOCOL_ADSB_UAT]  = "UAT",
+  [RF_PROTOCOL_FANET]     = "FAN"
+};
+
 size_t (*protocol_encode)(void *, ufo_t *);
-bool (*protocol_decode)(void *, ufo_t *, ufo_t *);
+bool   (*protocol_decode)(void *, ufo_t *, ufo_t *);
+
+static Slots_descr_t Time_Slots, *ts;
+static uint8_t       RF_timing = RF_TIMING_INTERVAL;
+
+extern const gnss_chip_ops_t *gnss_chip;
 
 static bool nrf905_probe(void);
 static void nrf905_setup(void);
-static void nrf905_channel(uint8_t);
+static void nrf905_channel(int8_t);
 static bool nrf905_receive(void);
 static void nrf905_transmit(void);
 static void nrf905_shutdown(void);
@@ -65,28 +78,29 @@ static void nrf905_shutdown(void);
 static bool sx1276_probe(void);
 static bool sx1262_probe(void);
 static void sx12xx_setup(void);
-static void sx12xx_channel(uint8_t);
+static void sx12xx_channel(int8_t);
 static bool sx12xx_receive(void);
 static void sx12xx_transmit(void);
-static void sx12xx_shutdown(void);
+static void sx1276_shutdown(void);
+static void sx1262_shutdown(void);
 
 static bool uatm_probe(void);
 static void uatm_setup(void);
-static void uatm_channel(uint8_t);
+static void uatm_channel(int8_t);
 static bool uatm_receive(void);
 static void uatm_transmit(void);
 static void uatm_shutdown(void);
 
 static bool cc13xx_probe(void);
 static void cc13xx_setup(void);
-static void cc13xx_channel(uint8_t);
+static void cc13xx_channel(int8_t);
 static bool cc13xx_receive(void);
 static void cc13xx_transmit(void);
 static void cc13xx_shutdown(void);
 
 static bool ognrf_probe(void);
 static void ognrf_setup(void);
-static void ognrf_channel(uint8_t);
+static void ognrf_channel(int8_t);
 static bool ognrf_receive(void);
 static void ognrf_transmit(void);
 static void ognrf_shutdown(void);
@@ -106,24 +120,24 @@ const rfchip_ops_t nrf905_ops = {
 #if !defined(EXCLUDE_SX12XX)
 const rfchip_ops_t sx1276_ops = {
   RF_IC_SX1276,
-  "SX1276",
+  "SX127x",
   sx1276_probe,
   sx12xx_setup,
   sx12xx_channel,
   sx12xx_receive,
   sx12xx_transmit,
-  sx12xx_shutdown
+  sx1276_shutdown
 };
 #if defined(USE_BASICMAC)
 const rfchip_ops_t sx1262_ops = {
   RF_IC_SX1262,
-  "SX1262",
+  "SX126x",
   sx1262_probe,
   sx12xx_setup,
   sx12xx_channel,
   sx12xx_receive,
   sx12xx_transmit,
-  sx12xx_shutdown
+  sx1262_shutdown
 };
 #endif /* USE_BASICMAC */
 #endif /*EXCLUDE_SX12XX */
@@ -262,6 +276,34 @@ byte RF_setup(void)
 
   if (rf_chip) {
     rf_chip->setup();
+
+    const rf_proto_desc_t *p;
+
+    switch (settings->rf_protocol)
+    {
+      case RF_PROTOCOL_OGNTP:     p = &ogntp_proto_desc;  break;
+      case RF_PROTOCOL_P3I:       p = &p3i_proto_desc;    break;
+      case RF_PROTOCOL_FANET:     p = &fanet_proto_desc;  break;
+      case RF_PROTOCOL_ADSB_UAT:  p = &uat978_proto_desc; break;
+      case RF_PROTOCOL_LEGACY:
+      default:                    p = &legacy_proto_desc; break;
+    }
+
+    RF_timing         = p->tm_type;
+
+    ts                = &Time_Slots;
+    ts->air_time      = p->air_time;
+    ts->interval_min  = p->tx_interval_min;
+    ts->interval_max  = p->tx_interval_max;
+    ts->interval_mid  = (p->tx_interval_max + p->tx_interval_min) / 2;
+    ts->s0.begin      = p->slot0.begin;
+    ts->s1.begin      = p->slot1.begin;
+    ts->s0.duration   = p->slot0.end - p->slot0.begin;
+    ts->s1.duration   = p->slot1.end - p->slot1.begin;
+
+    uint16_t duration = ts->s0.duration + ts->s1.duration;
+    ts->adj = duration > ts->interval_mid ? 0 : (ts->interval_mid - duration) / 2;
+
     return rf_chip->type;
   } else {
     return RF_IC_NONE;
@@ -270,64 +312,90 @@ byte RF_setup(void)
 
 void RF_SetChannel(void)
 {
-  tmElements_t tm;
-  time_t Time;
+  tmElements_t  tm;
+  time_t        Time;
+  unsigned long pps_btime_ms, ref_time_ms;
 
   switch (settings->mode)
   {
   case SOFTRF_MODE_TXRX_TEST:
     Time = now();
+    RF_timing = RF_timing == RF_TIMING_2SLOTS_PPS_SYNC ?
+                RF_TIMING_INTERVAL : RF_timing;
     break;
 #if !defined(EXCLUDE_MAVLINK)
   case SOFTRF_MODE_UAV:
     Time = the_aircraft.location.gps_time_stamp / 1000000;
+    RF_timing = RF_timing == RF_TIMING_2SLOTS_PPS_SYNC ?
+                RF_TIMING_INTERVAL : RF_timing;
     break;
 #endif /* EXCLUDE_MAVLINK */
   case SOFTRF_MODE_NORMAL:
   default:
-    unsigned long pps_btime_ms = SoC->get_PPS_TimeMarker();
-    unsigned long time_corr_pos = 0;
-    unsigned long time_corr_neg = 0;
+    pps_btime_ms = SoC->get_PPS_TimeMarker();
+    unsigned long time_corr_neg;
+    unsigned long ms_since_boot = millis();
 
     if (pps_btime_ms) {
-      unsigned long lastCommitTime = millis() - gnss.time.age();
-      if (pps_btime_ms <= lastCommitTime) {
-        time_corr_neg = (lastCommitTime - pps_btime_ms) % 1000;
+      unsigned long last_Commit_Time = ms_since_boot - gnss.time.age();
+      if (pps_btime_ms <= last_Commit_Time) {
+        time_corr_neg = (last_Commit_Time - pps_btime_ms) % 1000;
       } else {
-        time_corr_neg = 1000 - ((pps_btime_ms - lastCommitTime) % 1000);
+        time_corr_neg = 1000 - ((pps_btime_ms - last_Commit_Time) % 1000);
       }
-      time_corr_pos = 400; /* 400 ms after PPS for V6, 350 ms - for OGNTP */
+      ref_time_ms = (ms_since_boot - pps_btime_ms) <= 1010 ?
+                    pps_btime_ms :
+                    ms_since_boot-(ms_since_boot % 1000)+(pps_btime_ms % 1000);
+    } else {
+      unsigned long last_RMC_Commit = ms_since_boot - gnss.date.age();
+      time_corr_neg = gnss_chip ? gnss_chip->rmc_ms : 100;
+      ref_time_ms = last_RMC_Commit - time_corr_neg;
     }
 
-    int yr = gnss.date.year();
+    int yr    = gnss.date.year();
     if( yr > 99)
-        yr = yr - 1970;
+        yr    = yr - 1970;
     else
-        yr += 30;
-    tm.Year = yr;
-    tm.Month = gnss.date.month();
-    tm.Day = gnss.date.day();
-    tm.Hour = gnss.time.hour();
+        yr    += 30;
+    tm.Year   = yr;
+    tm.Month  = gnss.date.month();
+    tm.Day    = gnss.date.day();
+    tm.Hour   = gnss.time.hour();
     tm.Minute = gnss.time.minute();
     tm.Second = gnss.time.second();
 
-    Time = makeTime(tm) + (gnss.time.age() - time_corr_neg + time_corr_pos)/ 1000;
+    Time = makeTime(tm) + (gnss.time.age() - time_corr_neg) / 1000;
     break;
   }
 
-  uint8_t Slot = 0; /* only #0 "400ms" timeslot is currently in use */
   uint8_t OGN = (settings->rf_protocol == RF_PROTOCOL_OGNTP ? 1 : 0);
+  int8_t chan = -1;
 
-  /* FANET uses 868.2 MHz. Bandwidth is 250kHz  */
-  if (settings->rf_protocol == RF_PROTOCOL_FANET) {
-    Slot = 0;
+  switch (RF_timing)
+  {
+  case RF_TIMING_2SLOTS_PPS_SYNC:
+    {
+      unsigned long ms_since_boot = millis();
+      if ((ms_since_boot - ts->s0.tmarker) >= ts->interval_mid) {
+        ts->s0.tmarker = ref_time_ms + ts->s0.begin - ts->adj;
+        ts->current = 0;
+        chan = (int8_t) RF_FreqPlan.getChannel(Time, ts->current, OGN);
+      }
+      if ((ms_since_boot - ts->s1.tmarker) >= ts->interval_mid) {
+        ts->s1.tmarker = ref_time_ms + ts->s1.begin;
+        ts->current = 1;
+        chan = (int8_t) RF_FreqPlan.getChannel(Time, ts->current, OGN);
+      }
+    }
+    break;
+  case RF_TIMING_INTERVAL:
+  default:
+    chan = (int8_t) RF_FreqPlan.getChannel(Time, 0, OGN);
+    break;
   }
-
-  uint8_t chan = RF_FreqPlan.getChannel(Time, Slot, OGN);
 
 #if DEBUG
   Serial.print("Plan: "); Serial.println(RF_FreqPlan.Plan);
-  Serial.print("Slot: "); Serial.println(Slot);
   Serial.print("OGN: "); Serial.println(OGN);
   Serial.print("Channel: "); Serial.println(chan);
 #endif
@@ -365,7 +433,7 @@ size_t RF_Encode(ufo_t *fop)
       return size;
     }
 
-    if ((millis() - TxTimeMarker) > TxRandomValue) {
+    if (millis() > TxTimeMarker) {
       size = (*protocol_encode)((void *) &TxBuffer[0], fop);
     }
   }
@@ -381,30 +449,50 @@ bool RF_Transmit(size_t size, bool wait)
       return true;
     }
 
-    if (!wait || (millis() - TxTimeMarker) > TxRandomValue) {
+    if (!wait || millis() > TxTimeMarker) {
 
       time_t timestamp = now();
 
-      rf_chip->transmit();
+      if (memcmp(TxBuffer, RxBuffer, RF_tx_size) != 0) {
 
-      if (settings->nmea_p) {
-        StdOut.print(F("$PSRFO,"));
-        StdOut.print((unsigned long) timestamp);
-        StdOut.print(F(","));
-        StdOut.println(Bin2Hex((byte *) &TxBuffer[0],
-                               RF_Payload_Size(settings->rf_protocol)));
+        rf_chip->transmit();
+
+        if (settings->nmea_p) {
+          StdOut.print(F("$PSRFO,"));
+          StdOut.print((unsigned long) timestamp);
+          StdOut.print(F(","));
+          StdOut.println(Bin2Hex((byte *) &TxBuffer[0],
+                                 RF_Payload_Size(settings->rf_protocol)));
+        }
+        tx_packets_counter++;
+
+      } else {
+
+        if (settings->nmea_p) {
+          StdOut.println(F("$PSRFE,RF loopback is detected on Tx"));
+        }
       }
-      tx_packets_counter++;
+
       RF_tx_size = 0;
 
-      TxRandomValue = (
-#if !defined(EXCLUDE_SX12XX)
-        LMIC.protocol ?
-        SoC->random(LMIC.protocol->tx_interval_min, LMIC.protocol->tx_interval_max) :
-#endif
-        SoC->random(LEGACY_TX_INTERVAL_MIN, LEGACY_TX_INTERVAL_MAX));
+      Slot_descr_t *next;
+      unsigned long adj;
 
-      TxTimeMarker = millis();
+      switch (RF_timing)
+      {
+      case RF_TIMING_2SLOTS_PPS_SYNC:
+        next = RF_FreqPlan.Channels == 1 ? &(ts->s0) :
+               ts->current          == 1 ? &(ts->s0) : &(ts->s1);
+        adj  = ts->current ? ts->adj   : 0;
+        TxTimeMarker = next->tmarker    +
+                       ts->interval_mid +
+                       SoC->random(adj, next->duration - ts->air_time);
+        break;
+      case RF_TIMING_INTERVAL:
+      default:
+        TxTimeMarker = millis() + SoC->random(ts->interval_min, ts->interval_max) - ts->air_time;
+        break;
+      }
 
       return true;
     }
@@ -450,7 +538,7 @@ uint8_t RF_Payload_Size(uint8_t protocol)
  *
  */
 
-static uint8_t nrf905_channel_prev = (uint8_t) -1;
+static int8_t nrf905_channel_prev = (int8_t) -1;
 static bool nrf905_receive_active  = false;
 
 static bool nrf905_probe()
@@ -502,14 +590,14 @@ static bool nrf905_probe()
   return false;
 }
 
-static void nrf905_channel(uint8_t channel)
+static void nrf905_channel(int8_t channel)
 {
-  if (channel != nrf905_channel_prev) {
+  if (channel != -1 && channel != nrf905_channel_prev) {
 
     uint32_t frequency;
     nRF905_band_t band;
 
-    frequency = RF_FreqPlan.getChanFrequency(channel);
+    frequency = RF_FreqPlan.getChanFrequency((uint8_t) channel);
     band = (frequency >= 844800000UL ? NRF905_BAND_868 : NRF905_BAND_433);
 
     nRF905_setFrequency(band , frequency);
@@ -630,7 +718,7 @@ static bool sx12xx_receive_complete = false;
 bool sx12xx_receive_active = false;
 static bool sx12xx_transmit_complete = false;
 
-static uint8_t sx12xx_channel_prev = (uint8_t) -1;
+static int8_t sx12xx_channel_prev = (int8_t) -1;
 
 #if defined(USE_BASICMAC)
 void os_getDevEui (u1_t* buf) { }
@@ -666,7 +754,7 @@ static bool sx1276_probe()
 
   SoC->SPI_begin();
 
-  hal_init (nullptr);
+  lmic_hal_init (nullptr);
 
   // manually reset radio
   hal_pin_rst(0); // drive RST pin low
@@ -682,9 +770,9 @@ static bool sx1276_probe()
   pinMode(lmic_pins.nss, INPUT);
   SPI.end();
 
-  if (v == 0x12) {
+  if (v == 0x12 || v == 0x13) {
 
-    if (v_reset == 0x12) {
+    if (v_reset == 0x12 || v_reset == 0x13) {
       RF_SX12XX_RST_is_connected = false;
     }
 
@@ -696,8 +784,8 @@ static bool sx1276_probe()
 
 #if defined(USE_BASICMAC)
 
-#define CMD_READREGISTER		        0x1D
-#define REG_LORASYNCWORDLSB	        0x0741
+#define CMD_READREGISTER            0x1D
+#define REG_LORASYNCWORDLSB         0x0741
 #define SX126X_DEF_LORASYNCWORDLSB  0x24
 
 static void sx1262_ReadRegs (uint16_t addr, uint8_t* data, uint8_t len) {
@@ -725,7 +813,7 @@ static bool sx1262_probe()
 
   SoC->SPI_begin();
 
-  hal_init (nullptr);
+  lmic_hal_init (nullptr);
 
   // manually reset radio
   hal_pin_rst(0); // drive RST pin low
@@ -755,11 +843,29 @@ static bool sx1262_probe()
 }
 #endif
 
-static void sx12xx_channel(uint8_t channel)
+static void sx12xx_channel(int8_t channel)
 {
-  if (channel != sx12xx_channel_prev) {
-    uint32_t frequency = RF_FreqPlan.getChanFrequency(channel);
+  if (channel != -1 && channel != sx12xx_channel_prev) {
+    uint32_t frequency = RF_FreqPlan.getChanFrequency((uint8_t) channel);
     int8_t fc = settings->freq_corr;
+
+#if defined(FANET_ZONE2_ENABLE)
+    /*
+     * NEEDS WORK
+     * https://github.com/3s1d/fanet-stm32/commit/0671ce65e5faa06e0e34abce7f35a5b95c1e19db
+     *
+     * The quick and diry patch below is Ok to apply
+     * when (if) FCC certified Skytraxx 'zone #2' devices will appear on the market
+     *
+     * Better solution is to advance
+     * RF_FreqPlan.setPlan(band) -> RF_FreqPlan.setPlan(proto, band)
+     */
+    if (LMIC.protocol                            &&
+        LMIC.protocol->type == RF_PROTOCOL_FANET &&
+        settings->band == RF_BAND_US) {
+      frequency = 920800000UL; /* 920.8 MHz */
+    }
+#endif /* FANET_ZONE2_ENABLE */
 
     //Serial.print("frequency: "); Serial.println(frequency);
 
@@ -890,6 +996,11 @@ static void sx12xx_setvars()
   if (LMIC.protocol && LMIC.protocol->type == RF_PROTOCOL_FANET) {
     /* for only a few nodes around, increase the coding rate to ensure a more robust transmission */
     LMIC.rps = setCr(LMIC.rps, CR_4_8);
+#if defined(FANET_ZONE2_ENABLE)
+    if (settings->band == RF_BAND_US) {
+      LMIC.rps = setBw(LMIC.rps, BW500);
+    }
+#endif /* FANET_ZONE2_ENABLE */
   }
 }
 
@@ -942,7 +1053,16 @@ static void sx12xx_transmit()
     sx12xx_setvars();
     os_setCallback(&sx12xx_txjob, sx12xx_tx_func);
 
+    unsigned long tx_timeout = LMIC.protocol ? (LMIC.protocol->air_time + 25) : 60;
+    unsigned long tx_start   = millis();
+
     while (sx12xx_transmit_complete == false) {
+      if ((millis() - tx_start) > tx_timeout) {
+        os_radio(RADIO_RST);
+        //Serial.println("TX timeout");
+        break;
+      }
+
       // execute scheduled jobs and events
       os_runstep();
 
@@ -950,13 +1070,23 @@ static void sx12xx_transmit()
     };
 }
 
-static void sx12xx_shutdown()
+static void sx1276_shutdown()
 {
   LMIC_shutdown();
-  SPI.end();
 
-  pinMode(lmic_pins.nss, INPUT);
+  SPI.end();
 }
+
+#if defined(USE_BASICMAC)
+static void sx1262_shutdown()
+{
+  os_init (nullptr);
+  sx126x_ll_ops.radio_sleep();
+  delay(1);
+
+  SPI.end();
+}
+#endif /* USE_BASICMAC */
 
 // Enable rx mode and call func when a packet is received
 static void sx12xx_rx(osjobcb_t func) {
@@ -966,7 +1096,7 @@ static void sx12xx_rx(osjobcb_t func) {
   // still stops after receiving a packet)
   os_radio(LMIC.protocol &&
            LMIC.protocol->modulation_type == RF_MODULATION_TYPE_LORA ?
-          RADIO_RXON : RADIO_RX);
+           RADIO_RXON : RADIO_RX);
   //Serial.println("RX");
 }
 
@@ -1261,7 +1391,8 @@ static bool uatm_probe()
   u1_t i=0;
 
   /* Do not probe on itself and ESP8266 */
-  if (SoC->id == SOC_CC13XX ||
+  if (SoC->id == SOC_CC13X0 ||
+      SoC->id == SOC_CC13X2 ||
       SoC->id == SOC_ESP8266) {
     return success;
   }
@@ -1310,7 +1441,7 @@ static bool uatm_probe()
   return success;
 }
 
-static void uatm_channel(uint8_t channel)
+static void uatm_channel(int8_t channel)
 {
   /* Nothing to do */
 }
@@ -1423,7 +1554,7 @@ EasyLink myLink;
 EasyLink_TxPacket txPacket;
 #endif /* EXCLUDE_OGLEP3 */
 
-static uint8_t cc13xx_channel_prev = (uint8_t) -1;
+static int8_t cc13xx_channel_prev = (int8_t) -1;
 
 static bool cc13xx_receive_complete  = false;
 static bool cc13xx_receive_active    = false;
@@ -1629,19 +1760,20 @@ static bool cc13xx_probe()
 {
   bool success = false;
 
-  if (SoC->id == SOC_CC13XX) {
+  if (SoC->id == SOC_CC13X0 || SoC->id == SOC_CC13X2) {
     success = true;
   }
 
   return success;
 }
 
-static void cc13xx_channel(uint8_t channel)
+static void cc13xx_channel(int8_t channel)
 {
 #if !defined(EXCLUDE_OGLEP3)
   if (settings->rf_protocol != RF_PROTOCOL_ADSB_UAT &&
+      channel != -1                                 &&
       channel != cc13xx_channel_prev) {
-    uint32_t frequency = RF_FreqPlan.getChanFrequency(channel);
+    uint32_t frequency = RF_FreqPlan.getChanFrequency((uint8_t) channel);
 
     if (cc13xx_receive_active) {
       /* restart Rx upon a channel switch */
@@ -1902,7 +2034,7 @@ static void cc13xx_shutdown()
 
 static RFM_TRX  TRX;
 
-static uint8_t ognrf_channel_prev  = (uint8_t) -1;
+static int8_t ognrf_channel_prev  = (int8_t) -1;
 static bool ognrf_receive_active   = false;
 
 void RFM_Select  (void)                 { hal_pin_nss(0); }
@@ -1934,7 +2066,7 @@ static bool ognrf_probe()
   TRX.RESET        = RFM_RESET;
 
   SoC->SPI_begin();
-  hal_init (nullptr);
+  lmic_hal_init (nullptr);
 
   TRX.RESET(1);                      // RESET active
   vTaskDelay(10);                    // wait 10ms
@@ -1947,7 +2079,7 @@ static bool ognrf_probe()
   SPI.end();
 
 #if defined(WITH_RFM95)
-  if (ChipVersion == 0x12) success = true;
+  if (ChipVersion == 0x12 || ChipVersion == 0x13) success = true;
 #endif /* WITH_RFM95 */
 #if defined(WITH_RFM69)
   if (ChipVersion == 0x24) success = true;
@@ -1963,9 +2095,9 @@ static bool ognrf_probe()
   return success;
 }
 
-static void ognrf_channel(uint8_t channel)
+static void ognrf_channel(int8_t channel)
 {
-  if (channel != ognrf_channel_prev) {
+  if (channel != -1 && channel != ognrf_channel_prev) {
 
     if (ognrf_receive_active) {
 
@@ -2001,7 +2133,7 @@ static void ognrf_setup()
   TRX.RESET        = RFM_RESET;
 
   SoC->SPI_begin();
-  hal_init (nullptr);
+  lmic_hal_init (nullptr);
 
   TRX.RESET(1);                      // RESET active
   vTaskDelay(10);                    // wait 10ms

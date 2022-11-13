@@ -1,6 +1,6 @@
 /*
  * View_Text_EPD.cpp
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -68,6 +68,8 @@ const char *Aircraft_Type[] = {
   [AIRCRAFT_TYPE_STATIC]     = "Static"
 };
 
+static int prev_j=0;
+
 static void EPD_Draw_Text()
 {
   int j=0;
@@ -84,8 +86,12 @@ static void EPD_Draw_Text()
     }
   }
 
-  if (j > 0 && !EPD_ready_to_display) {
-
+#if defined(USE_EPD_TASK)
+  if (j > 0 && EPD_update_in_progress == EPD_UPDATE_NONE) {
+//  if (j > 0 && SoC->Display_lock()) {
+#else
+  if (j > 0) {
+#endif
     uint8_t db;
     const char *u_dist, *u_alt, *u_spd;
     float disp_dist;
@@ -94,8 +100,13 @@ static void EPD_Draw_Text()
     qsort(traffic_by_dist, j, sizeof(traffic_by_dist_t), traffic_cmp_by_distance);
 
     if (EPD_current > j) {
-      EPD_current = j;
+      if (prev_j > j) {
+        EPD_current = j;
+      } else {
+        EPD_current = 1;
+      }
     }
+    prev_j = j;
 
     bearing = (int) traffic_by_dist[EPD_current - 1].fop->bearing;
 
@@ -149,7 +160,9 @@ static void EPD_Draw_Text()
     } else {
       uint32_t id = traffic_by_dist[EPD_current - 1].fop->addr;
 
-      snprintf(id_text, sizeof(id_text), "ID: %06X", id);
+      if (!(SoC->ADB_ops && SoC->ADB_ops->query(DB_OGN, id, id_text, sizeof(id_text)))) {
+        snprintf(id_text, sizeof(id_text), "ID: %06X", id);
+      }
     }
 
     display->setFont(&FreeMonoBold12pt7b);
@@ -242,8 +255,14 @@ static void EPD_Draw_Text()
 //      Serial.println();
     }
 
+#if defined(USE_EPD_TASK)
     /* a signal to background EPD update task */
-    EPD_ready_to_display = true;
+    EPD_update_in_progress = EPD_UPDATE_FAST;
+//    SoC->Display_unlock();
+//    yield();
+#else
+    display->display(true);
+#endif
   }
 }
 
@@ -254,42 +273,20 @@ void EPD_text_setup()
 
 void EPD_text_loop()
 {
-  bool hasFix = isValidGNSSFix();
+  if (isTimeToEPD()) {
+    bool hasFix = isValidGNSSFix() || (settings->mode == SOFTRF_MODE_TXRX_TEST);
 
-  if (hasFix) {
-      if (Traffic_Count() > 0) {
-        view_state_curr = STATE_TVIEW_TEXT;
-      } else {
-        view_state_curr = STATE_TVIEW_NOTRAFFIC;
-      }
-  } else {
-    view_state_curr = STATE_TVIEW_NOFIX;
-  }
-
-  if (EPD_vmode_updated) {
-    EPD_Clear_Screen();
-    view_state_prev = STATE_TVIEW_NONE;
-    EPD_vmode_updated = false;
-  }
-
-  if (view_state_curr != view_state_prev &&
-      view_state_curr == STATE_TVIEW_NOFIX) {
-    EPD_Message(NO_FIX_TEXT, NULL);
-    view_state_prev = view_state_curr;
-  }
-
-  if (view_state_curr != view_state_prev &&
-      view_state_curr == STATE_TVIEW_NOTRAFFIC) {
-    EPD_Message("NO", "TRAFFIC");
-    view_state_prev = view_state_curr;
-  }
-
-  if (view_state_curr == STATE_TVIEW_TEXT) {
-    if (view_state_curr != view_state_prev) {
-//       EPD_Clear_Screen();
-       view_state_prev = view_state_curr;
+    if (hasFix) {
+        if (Traffic_Count() > 0) {
+          EPD_Draw_Text();
+        } else {
+          EPD_Message("NO", "TRAFFIC");
+        }
+    } else {
+      EPD_Message(NO_FIX_TEXT, NULL);
     }
-    EPD_Draw_Text();
+
+    EPDTimeMarker = millis();
   }
 }
 
@@ -297,6 +294,8 @@ void EPD_text_next()
 {
   if (EPD_current < MAX_TRACKING_OBJECTS) {
     EPD_current++;
+  } else {
+    EPD_current = 1;
   }
 }
 
@@ -304,6 +303,8 @@ void EPD_text_prev()
 {
   if (EPD_current > 1) {
     EPD_current--;
+  } else {
+    EPD_current = MAX_TRACKING_OBJECTS;
   }
 }
 

@@ -3,9 +3,13 @@
 #include <time.h>
 
 #if !defined(ENERGIA_ARCH_CC13XX) && !defined(ENERGIA_ARCH_CC13X2) && \
-    !defined(ARDUINO_ARCH_NRF52)
+    !defined(ARDUINO_ARCH_NRF52)  && !defined(ARDUINO_ARCH_SAMD)
 #include <pgmspace.h>
-#if defined(ARDUINO_ARCH_STM32)
+#if defined(ARDUINO_ARCH_ESP32)
+#include "esp_idf_version.h"
+#endif
+#if defined(ARDUINO_ARCH_STM32) || defined(ARDUINO_ARCH_RP2040) || \
+   (defined(ARDUINO_ARCH_ESP32) && ESP_IDF_VERSION_MAJOR>=4)
 #define	_AND		,
 #define	_CONST		const
 #define	_EXFUN(name, proto)		name proto
@@ -13,7 +17,7 @@
 #endif
 #else
 #include <avr/pgmspace.h>
-#if defined(ARDUINO_ARCH_NRF52)
+#if defined(ARDUINO_ARCH_NRF52) || defined(ARDUINO_ARCH_SAMD)
 #define	_AND		,
 #define	_CONST		const
 #define	_EXFUN(name, proto)		name proto

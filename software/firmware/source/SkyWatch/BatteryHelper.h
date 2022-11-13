@@ -1,6 +1,6 @@
 /*
  * BatteryHelper.h
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,6 +35,14 @@ enum
 	POWER_SAVE_NONE = 0,
 	POWER_SAVE_WIFI = 1,
 	POWER_SAVE_GNSS = 2
+};
+
+enum
+{
+	PMU_NONE,
+	PMU_AXP192,
+	PMU_AXP202,
+	PMU_AXP2101,
 };
 
 void  Battery_setup(void);

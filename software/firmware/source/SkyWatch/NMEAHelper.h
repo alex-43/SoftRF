@@ -1,6 +1,6 @@
 /*
  * NMEAHelper.h
- * Copyright (C) 2019-2021 Linar Yusupov
+ * Copyright (C) 2019-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -113,7 +113,7 @@ typedef struct nmea_status_struct {
  * Valid date is critical for legacy protocol (only).
  */
 #define NMEA_EXP_TIME  3500 /* 3.5 seconds */
-#define isValidGNSSFix()  ( nmea.location.isValid()               && \
+#define isValidNMEAFix()  ( nmea.location.isValid()               && \
                             nmea.altitude.isValid()               && \
                             nmea.date.isValid()                   && \
                            (nmea.location.age() <= NMEA_EXP_TIME) && \
@@ -127,13 +127,14 @@ typedef struct nmea_status_struct {
 void NMEA_setup(void);
 void NMEA_loop(void);
 
+bool NMEA_Request_Settings(void);
 bool NMEA_Save_Settings(void);
 
 bool NMEA_isConnected(void);
 bool NMEA_hasGNSS(void);
 bool NMEA_hasFLARM(void);
 bool NMEA_has3DFix(void);
-void NMEA_Out(byte *, size_t, bool);
+void NMEA_Out(uint8_t, byte *, size_t, bool);
 void NMEA_fini();
 
 extern status_t NMEA_Status;

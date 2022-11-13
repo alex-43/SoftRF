@@ -1,6 +1,6 @@
 /*
  * BatteryHelper.h
- * Copyright (C) 2016-2021 Linar Yusupov
+ * Copyright (C) 2016-2022 Linar Yusupov
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,6 +48,14 @@ enum
 	BATTERY_PARAM_THRESHOLD,
 	BATTERY_PARAM_CUTOFF,
 	BATTERY_PARAM_CHARGE
+};
+
+enum
+{
+	PMU_NONE,
+	PMU_AXP192,
+	PMU_AXP202,
+	PMU_AXP2101,
 };
 
 void    Battery_setup(void);
